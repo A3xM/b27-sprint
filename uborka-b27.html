@@ -3,7 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Уборка B-27 — Семейный спринт v2</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Б-27 Спринт">
+    <meta name="theme-color" content="#d97706">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <title>Б-27 Семейный спринт</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
@@ -28,6 +34,47 @@
         ::-webkit-scrollbar-thumb { background: #8b5a2b; border-radius: 10px; }
         .pref-bar { height: 4px; border-radius: 2px; background: #e5e7eb; }
         .pref-fill { height: 4px; border-radius: 2px; background: #10b981; }
+
+        /* ─── Мобильная адаптация ─── */
+        html { -webkit-text-size-adjust: 100%; }
+        button { touch-action: manipulation; }
+
+        /* Пространство под нижний таббар */
+        #app { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem); }
+        @media (min-width: 640px) { #app { padding-bottom: 1.5rem; } }
+
+        /* Нижний таббар */
+        #bottomNav {
+            display: flex;
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: #fff; border-top: 1px solid #e5e7eb;
+            box-shadow: 0 -2px 16px rgba(0,0,0,.07);
+            z-index: 40;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        @media (min-width: 640px) { #bottomNav { display: none; } }
+
+        /* Bottom-sheet для модалок на мобайле */
+        @media (max-width: 639px) {
+            .bs-wrap { align-items: flex-end !important; padding: 0 !important; }
+            .bs-card {
+                border-top-left-radius: 1.5rem !important;
+                border-top-right-radius: 1.5rem !important;
+                border-bottom-left-radius: 0 !important;
+                border-bottom-right-radius: 0 !important;
+                width: 100% !important; max-width: 100% !important;
+                max-height: 92dvh; overflow-y: auto;
+                margin: 0 !important;
+            }
+        }
+
+        /* Кнопки действий в карточке — сетка 2×2 на мобайле */
+        .action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+        @media (min-width: 640px) { .action-btns { display: flex; flex-wrap: wrap; gap: 8px; } }
+        .action-btns button { min-height: 44px; justify-content: center; }
+
+        /* Кнопки управления — минимум 44px */
+        .tap44 { min-height: 44px; display: inline-flex; align-items: center; }
     </style>
 </head>
 <body class="bg-gradient-to-br from-amber-50 to-stone-100 font-sans">
@@ -821,7 +868,7 @@ function renderStats(tasks) {
 // ─────────────────── ПЕРЕКЛЮЧАТЕЛЬ ПОЛЬЗОВАТЕЛЯ (общий) ───────────────────
 function renderUserSwitcher(current) {
     const opts = [...MEMBERS, "Администратор"];
-    return `<select id="userSwitcher" class="border rounded-lg px-2 py-1 text-sm">
+    return `<select id="userSwitcher" class="hidden sm:inline-block border rounded-lg px-2 py-1.5 text-sm tap44">
         ${opts.map(m => `<option ${m===current?"selected":""}>${m}</option>`).join("")}
     </select>`;
 }
@@ -849,14 +896,14 @@ function renderAdminView() {
                 <span class="text-xs px-1 rounded" style="background:${prefColor(t.prefs[m]||1)}22;color:${prefColor(t.prefs[m]||1)}">
                     ${t.prefs[m]||1}/10
                 </span>
-                <button class="reassignBtn text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" data-id="${t.id}">↪ Передать</button>
+                <button class="reassignBtn text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-lg" data-id="${t.id}">↪ Передать</button>
             </div>`).join("");
 
         const doneCards = done.map(t => `
             <div class="flex items-center gap-2 border-b py-1 group">
                 <span class="flex-1 text-xs line-through text-gray-400">${t.name}</span>
                 <span class="text-xs text-gray-300">⏱ ${t.time} мин</span>
-                <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" data-id="${t.id}">↩ Вернуть</button>
+                <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-lg" data-id="${t.id}">↩ Вернуть</button>
             </div>`).join("");
 
         return `
@@ -1002,7 +1049,7 @@ function renderExecution() {
                         <div class="flex items-center gap-2 border-b py-1 group">
                             <span class="flex-1 text-sm line-through text-gray-400">${t.name}</span>
                             <span class="text-xs text-gray-300">⏱ ${t.time} мин</span>
-                            <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" data-id="${t.id}">↩ Вернуть</button>
+                            <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-lg" data-id="${t.id}">↩ Вернуть</button>
                         </div>`).join("")}
                     </div>
                 </details>` : ""}
@@ -1045,7 +1092,7 @@ function renderCard(task, user, orderIdx, orderTotal) {
         <div class="flex items-center gap-1.5 py-0.5 group/sub">
             <input type="checkbox" class="subtaskCheck w-3.5 h-3.5 cursor-pointer" data-task-id="${task.id}" data-sub-id="${s.id}" ${s.done?"checked":""}>
             <span class="text-xs flex-1 ${s.done?"line-through text-gray-300":"text-gray-600"}">${s.name}</span>
-            <button class="deleteSubtask text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover/sub:opacity-100 transition-opacity leading-none" data-task-id="${task.id}" data-sub-id="${s.id}">×</button>
+            <button class="deleteSubtask text-gray-300 hover:text-red-400 active:text-red-500 text-sm leading-none px-1 py-1" data-task-id="${task.id}" data-sub-id="${s.id}">×</button>
         </div>`).join("");
     const subtaskSection = `
         <div class="mt-2 pl-2 border-l-2 border-gray-100">
@@ -1090,11 +1137,11 @@ function renderCard(task, user, orderIdx, orderTotal) {
         </div>
         ${subtaskSection}
         ${!isAdmin ? `
-        <div class="flex gap-2 mt-2 flex-wrap">
-            <button class="timerBtn font-bold text-sm bg-red-500 text-white px-3 py-2 rounded-xl" data-id="${task.id}">${isMisha ? `🍅 Помидор · +${task.time*2}⭐` : "🍅 Помидор"}</button>
-            <button class="frogBtn font-bold text-sm px-3 py-2 rounded-xl ${isFrog ? "bg-lime-400 text-lime-900" : "bg-lime-100 text-lime-700"}" data-id="${task.id}">${isFrog ? "🐸 Это лягушка!" : "🐸 Лягушка?"}</button>
-            <button class="elephantBtn text-sm bg-orange-100 text-orange-700 px-3 py-2 rounded-xl font-bold" data-id="${task.id}">🐘 Слон?</button>
-            <button class="hardBtn text-sm bg-red-100 text-red-600 px-3 py-2 rounded-xl font-bold" data-id="${task.id}">😥 Трудно</button>
+        <div class="action-btns">
+            <button class="timerBtn font-bold text-sm bg-red-500 text-white px-2 py-2 rounded-xl" data-id="${task.id}">${isMisha ? `🍅 Помидор +${task.time*2}⭐` : "🍅 Помидор"}</button>
+            <button class="frogBtn font-bold text-sm px-2 py-2 rounded-xl ${isFrog ? "bg-lime-400 text-lime-900" : "bg-lime-100 text-lime-700"}" data-id="${task.id}">${isFrog ? "🐸 Лягушка!" : "🐸 Лягушка?"}</button>
+            <button class="elephantBtn text-sm bg-orange-100 text-orange-700 px-2 py-2 rounded-xl font-bold" data-id="${task.id}">🐘 Слон?</button>
+            <button class="hardBtn text-sm bg-rose-100 text-rose-600 px-2 py-2 rounded-xl font-bold" data-id="${task.id}">😥 Трудно</button>
         </div>` : ""}
     </div>`;
 }
@@ -1121,9 +1168,9 @@ function showReassignModal(taskId) {
     }).join("");
 
     const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4";
+    modal.className = "fixed inset-0 bg-black bg-opacity-50 bs-wrap flex items-center justify-center z-50 p-4";
     modal.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm bs-card">
         <h3 class="text-lg font-bold text-amber-800 mb-1">Передать дело</h3>
         <p class="text-sm text-gray-500 mb-4">«${task.name}» сейчас у <b>${task.assignee}</b></p>
         <div class="space-y-2 mb-5">${prefRows}</div>
@@ -1279,9 +1326,9 @@ function renderStatsModal() {
     }).join("");
 
     const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-auto p-4";
+    modal.className = "fixed inset-0 bg-black bg-opacity-50 bs-wrap flex items-start justify-center z-50 overflow-auto p-4";
     modal.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-3xl mt-8">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-3xl mt-8 bs-card">
         <div class="flex justify-between items-center mb-4">
             <h3 class="text-xl font-bold">📊 Статистика распределения</h3>
             <button id="closeStats" class="text-gray-400 hover:text-gray-700 text-2xl">×</button>
@@ -1310,9 +1357,9 @@ function showHardModal(task) {
     let tipIdx = Math.floor(Math.random() * HARD_TIPS.length);
 
     const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4";
+    modal.className = "fixed inset-0 bg-black bg-opacity-60 bs-wrap flex items-center justify-center z-50 p-4";
     modal.innerHTML = `
-    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm">
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm bs-card">
         <div class="flex justify-between items-start mb-4">
             <div>
                 <p class="text-xs text-gray-400 font-semibold uppercase tracking-wide">Сложно начать?</p>
@@ -1442,9 +1489,9 @@ function showRewardModal() {
     const today   = new Date().toLocaleDateString("ru-RU", {day:"numeric", month:"long", year:"numeric"});
 
     const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center z-50 p-4 overflow-auto";
+    modal.className = "fixed inset-0 bg-black bg-opacity-70 bs-wrap flex items-start justify-center z-50 p-4 overflow-auto";
     modal.innerHTML = `
-    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center my-auto">
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center my-auto bs-card">
         <div style="font-size:4rem;line-height:1.1">🏆</div>
         <h2 class="text-2xl font-black text-amber-800 mt-2 mb-1">Спринт 100%!</h2>
         ${streak > 1 ? `<p class="text-orange-500 font-bold mb-2">🔥 Серия: ${streak} спринтов подряд!</p>` : ""}
@@ -1573,9 +1620,9 @@ function showElephantModal(task) {
     const steps = elephantStepsFor(task);
 
     const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center z-50 p-4 overflow-auto";
+    modal.className = "fixed inset-0 bg-black bg-opacity-60 bs-wrap flex items-start justify-center z-50 p-4 overflow-auto";
     modal.innerHTML = `
-    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm mt-8 mb-8">
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm mt-8 mb-8 bs-card">
         <div class="flex justify-between items-start mb-2">
             <div>
                 <h3 class="text-xl font-black text-gray-800">🐘 Разбить на кусочки</h3>
@@ -1623,9 +1670,9 @@ function showElephantModal(task) {
 // ─────────────────── МОДАЛКА ДОБАВИТЬ ЗАДАЧУ ───────────────────
 function showAddTaskModal() {
     const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-auto p-4";
+    modal.className = "fixed inset-0 bg-black bg-opacity-50 bs-wrap flex items-start justify-center z-50 overflow-auto p-4";
     modal.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mt-8 mb-8">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mt-8 mb-8 bs-card">
         <div class="flex justify-between items-center mb-5">
             <h3 class="text-xl font-bold text-amber-800">➕ Новая задача</h3>
             <button id="closeAddTask" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
@@ -2034,6 +2081,27 @@ function renderWaitingScreen() {
     </div>`;
 }
 
+// ─────────────────── НИЖНИЙ ТАББАР (мобайл) ───────────────────
+function renderBottomNav(current) {
+    const tabs = [
+        { key:"Миша",          icon:"👦", label:"Миша"   },
+        { key:"Максим",        icon:"🧑", label:"Максим" },
+        { key:"Майя",          icon:"👧", label:"Майя"   },
+        { key:"Мама",          icon:"👩", label:"Мама"   },
+        { key:"Администратор", icon:"🔧", label:"Адм."   },
+    ];
+    return tabs.map(t => {
+        const active = t.key === current;
+        const col = active ? "#b45309" : "#9ca3af";
+        return `
+        <button class="navTab flex-1 flex flex-col items-center justify-center gap-0.5 py-2" style="color:${col};background:none;border:none" data-user="${t.key}">
+            <span style="font-size:1.4rem;line-height:1.2">${t.icon}</span>
+            <span style="font-size:.6rem;font-weight:${active?700:500}">${t.label}</span>
+            <span style="width:${active?18:0}px;height:2px;background:#d97706;border-radius:2px;transition:width .15s"></span>
+        </button>`;
+    }).join("");
+}
+
 // ─────────────────── ГЛАВНЫЙ РЕНДЕР ───────────────────
 function render() {
     const app = document.getElementById("app");
@@ -2046,6 +2114,27 @@ function render() {
     } else {
         app.innerHTML = renderExecution();
     }
+
+    // Нижний таббар (мобайл)
+    let nav = document.getElementById("bottomNav");
+    if (!nav) {
+        nav = document.createElement("div");
+        nav.id = "bottomNav";
+        document.body.appendChild(nav);
+    }
+    nav.innerHTML = renderBottomNav(state.currentUser);
+    nav.querySelectorAll(".navTab").forEach(btn => {
+        btn.onclick = () => {
+            const u = btn.dataset.user;
+            state.currentUser = u;
+            // Если участник выбран, а спринт уже запущен — перейти в режим выполнения
+            if (u !== "Администратор" && state.stage === "sprint_selection" && state.tasks.length > 0) {
+                state.stage = "execution";
+            }
+            saveState(); render();
+        };
+    });
+
     attachEvents();
 }
 
@@ -2062,6 +2151,11 @@ if (state.selectedSprintTaskIds.size === 0) {
     );
 }
 render();
+
+// Service Worker (PWA — работа офлайн)
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
 </script>
 </body>
 </html>

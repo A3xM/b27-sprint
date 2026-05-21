@@ -1,0 +1,25 @@
+{
+  "name": "Б-27 Семейный спринт",
+  "short_name": "Б-27",
+  "description": "Семейный трекер уборки — Лягушка, Помидор, Слон",
+  "start_url": "./uborka-b27.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fffbeb",
+  "theme_color": "#d97706",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
