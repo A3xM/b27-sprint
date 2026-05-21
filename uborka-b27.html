@@ -1,0 +1,2067 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Уборка B-27 — Семейный спринт v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        @keyframes confetti {
+            0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+        }
+        @keyframes stars {
+            0%   { transform: scale(0); opacity: 0; }
+            50%  { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 0; }
+        }
+        .confetti-piece {
+            position: fixed; width: 8px; height: 8px;
+            animation: confetti 2s ease-out forwards;
+            pointer-events: none; z-index: 1000;
+        }
+        .breathing-circle { transition: transform 1s ease-in-out; }
+        .breathing-circle.active { transform: scale(1.3); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #8b5a2b; border-radius: 10px; }
+        .pref-bar { height: 4px; border-radius: 2px; background: #e5e7eb; }
+        .pref-fill { height: 4px; border-radius: 2px; background: #10b981; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-amber-50 to-stone-100 font-sans">
+<div id="app" class="max-w-7xl mx-auto p-4 md:p-6"></div>
+
+<script>
+// ─────────────────── БАЗА ЗАДАЧ ───────────────────
+// type:
+//   "personal"    — каждый делает за себя (все участники из `who` получают копию)
+//   "adhd"        — короткая/конкретная, Миша — ответственный (±другие в `who`)
+//   "mom_primary" — Мама основная; `helper` = необязательная подзадача для другого
+//   "shared"      — алгоритм распределяет среди `who`
+//
+// subtask — авто-подзадача для Миши внутри сложной задачи
+
+const FULL_TASKS_DB = [
+
+    // ══ ЛИЧНЫЕ (каждый делает своё) ══════════════════════════════
+    { id:"p1", name:"Убрать свою комнату",
+      type:"personal", category:"Комнаты", freq:"weekly", time:20,
+      who:["Миша","Максим","Майя","Мама"],
+      prefs:{Миша:6,Максим:5,Майя:5,Мама:7} },
+
+    { id:"p2", name:"Собрать грязное бельё в своей комнате",
+      type:"personal", category:"Бельё", freq:"weekly", time:5,
+      who:["Миша","Максим","Майя","Мама"],
+      prefs:{Миша:8,Максим:5,Майя:7,Мама:5} },
+
+    { id:"p3", name:"Погладить и убрать свои вещи",
+      type:"personal", category:"Бельё", freq:"weekly", time:20,
+      who:["Максим","Майя","Мама"],          // Миша складывает, не гладит
+      note:"Миша складывает сам — без глажки",
+      prefs:{Миша:9,Максим:5,Майя:5,Мама:6} },
+
+    { id:"p4", name:"Сложить свои вещи (без глажки)",
+      type:"personal", category:"Бельё", freq:"weekly", time:10,
+      who:["Миша"],
+      adhdFriendly:true,
+      prefs:{Миша:9,Максим:5,Майя:5,Мама:6} },
+
+    // ══ ADHD-ЗАДАЧИ МИШИ (короткие, конкретные, с животными) ════
+    { id:"c1", name:"Полить цветы",
+      type:"adhd", category:"Растения", freq:"weekly", time:10,
+      who:["Миша"], adhdFriendly:true,
+      prefs:{Миша:10,Максим:5,Майя:8,Мама:4} },
+
+    { id:"c2", name:"Насыпать корм / налить воду питомцам",
+      type:"adhd", category:"Питомцы", freq:"weekly", time:5,
+      who:["Миша"], adhdFriendly:true,
+      prefs:{Миша:10,Максим:5,Майя:8,Мама:4} },
+
+    { id:"c3", name:"Убрать у питомцев",
+      type:"adhd", category:"Питомцы", freq:"weekly", time:10,
+      who:["Миша"], adhdFriendly:true,
+      prefs:{Миша:9,Максим:1,Майя:7,Мама:4} },
+
+    { id:"w8", name:"Вывезти мусор",
+      type:"adhd", category:"Вынос", freq:"weekly", time:5,
+      who:["Миша","Майя"], adhdFriendly:true,
+      prefs:{Миша:6,Максим:3,Майя:9,Мама:3} },
+
+    // ══ ЗАДАЧИ МАМЫ (с опц. помощниками) ════════════════════════
+    { id:"w7", name:"Убрать кухню",
+      type:"mom_primary", category:"Кухня", freq:"weekly", time:35,
+      who:["Мама"],
+      helper:{ who:"Миша", name:"Убрать со стола на кухне", time:5, adhdFriendly:true },
+      prefs:{Миша:3,Максим:1,Майя:1,Мама:6} },
+
+    { id:"l2", name:"Постирать бельё",
+      type:"mom_primary", category:"Бельё", freq:"weekly", time:15,
+      who:["Мама"],
+      note:"Дети приносят своё, мама загружает машину",
+      prefs:{Миша:10,Максим:2,Майя:6,Мама:8} },
+
+    { id:"f1", name:"Составить меню на неделю",
+      type:"mom_primary", category:"Питание", freq:"weekly", time:20,
+      who:["Мама"],
+      helper:{ who:"Майя", name:"Обсудить меню с мамой", time:10, optional:true },
+      prefs:{Миша:10,Максим:2,Майя:3,Мама:9} },
+
+    { id:"f2", name:"Купить продукты",
+      type:"mom_primary", category:"Питание", freq:"weekly", time:45,
+      who:["Мама"],
+      helper:{ who:"Максим", name:"Помочь донести продукты", time:15, optional:true },
+      note:"Не актуально при заказе доставки",
+      prefs:{Миша:8,Максим:3,Майя:3,Мама:9} },
+
+    // ══ РАСПРЕДЕЛЯЕМЫЕ — среди подростков и мамы ════════════════
+    // С/У детский: полностью → Майя/Мама; раковину → Миша-подзадача
+    { id:"w2", name:"Убрать с/у детский",
+      type:"shared", category:"Санузел", freq:"weekly", time:20,
+      who:["Майя","Мама"],
+      subtask:{ who:"Миша", name:"Помыть раковину в с/у (подзадача)", time:8, adhdFriendly:true },
+      prefs:{Миша:10,Максим:3,Майя:6,Мама:6} },
+
+    { id:"w3", name:"Помыть лестницу с 1 на 2 этаж",
+      type:"shared", category:"Лестницы", freq:"weekly", time:15,
+      who:["Майя","Максим","Мама"],
+      prefs:{Миша:4,Максим:2,Майя:6,Мама:6} },
+
+    { id:"w4", name:"Помыть пол в холле на 2м этаже",
+      type:"shared", category:"Полы", freq:"weekly", time:15,
+      who:["Майя","Мама"],
+      prefs:{Миша:5,Максим:2,Майя:6,Мама:6} },
+
+    { id:"w5", name:"Помыть пол в столовой и холле на 1м этаже",
+      type:"shared", category:"Полы", freq:"weekly", time:20,
+      who:["Майя","Мама"],
+      prefs:{Миша:5,Максим:1,Майя:3,Мама:5} },
+
+    { id:"w6", name:"Помыть пол в прихожей",
+      type:"shared", category:"Полы", freq:"weekly", time:15,
+      who:["Майя","Мама"],
+      prefs:{Миша:5,Максим:1,Майя:7,Мама:6} },
+
+    { id:"l3", name:"Разложить полотенца/постельное",
+      type:"shared", category:"Бельё", freq:"weekly", time:15,
+      who:["Майя","Мама"],
+      prefs:{Миша:7,Максим:2,Майя:5,Мама:6} },
+
+    // Раз в 2 недели
+    { id:"b1", name:"Сменить постельное бельё",
+      type:"shared", category:"Бельё", freq:"biweekly", time:20,
+      who:["Майя","Максим","Мама"],
+      note:"Каждый меняет своё + общие зоны",
+      prefs:{Миша:6,Максим:4,Майя:7,Мама:7} },
+
+    { id:"b2", name:"Помыть лестницу со 2 на 3 этаж",
+      type:"shared", category:"Лестницы", freq:"biweekly", time:15,
+      who:["Майя","Мама"],
+      prefs:{Миша:4,Максим:2,Майя:8,Мама:6} },
+
+    { id:"b3", name:"Влажная уборка столовой и холла",
+      type:"shared", category:"Полы", freq:"biweekly", time:25,
+      who:["Майя","Мама"],
+      prefs:{Миша:7,Максим:3,Майя:8,Мама:5} },
+
+    { id:"b4", name:"Влажная уборка прихожей",
+      type:"shared", category:"Полы", freq:"biweekly", time:15,
+      who:["Майя","Мама"],
+      prefs:{Миша:8,Максим:1,Майя:8,Мама:5} },
+
+    { id:"b5", name:"Убрать с/у на 1м этаже",
+      type:"shared", category:"Санузел", freq:"biweekly", time:20,
+      who:["Майя","Мама"],
+      subtask:{ who:"Миша", name:"Протереть раковину в с/у 1эт (подзадача)", time:8, adhdFriendly:true },
+      prefs:{Миша:10,Максим:3,Майя:9,Мама:6} },
+
+    { id:"b6", name:"Убрать библиотеку",
+      type:"shared", category:"Комнаты", freq:"biweekly", time:20,
+      who:["Максим","Мама"],
+      prefs:{Миша:8,Максим:2,Майя:3,Мама:7} },
+
+    { id:"b7", name:"Убрать с/у мамин",
+      type:"mom_primary", category:"Санузел", freq:"biweekly", time:20,
+      who:["Мама"],
+      prefs:{Миша:3,Максим:1,Майя:4,Мама:7} },
+
+    // Раз в месяц
+    { id:"m1", name:"Убрать бельевую",
+      type:"shared", category:"Бельё", freq:"monthly", time:20,
+      who:["Мама","Майя"],
+      prefs:{Миша:5,Максим:1,Майя:2,Мама:7} },
+
+    { id:"m2", name:"Убрать зал",
+      type:"shared", category:"Комнаты", freq:"monthly", time:25,
+      who:["Мама","Майя","Максим"],
+      prefs:{Миша:6,Максим:1,Майя:1,Мама:8} },
+
+    { id:"m3", name:"Убрать баню/парикмахерскую",
+      type:"shared", category:"Санузел", freq:"monthly", time:30,
+      who:["Мама","Майя"],
+      prefs:{Миша:9,Максим:2,Майя:2,Мама:7} },
+
+    { id:"m4", name:"Убрать кабинет",
+      type:"shared", category:"Комнаты", freq:"monthly", time:20,
+      who:["Максим","Мама"],
+      prefs:{Миша:2,Максим:4,Майя:4,Мама:8} },
+
+    { id:"m5", name:"Убрать террасу",
+      type:"shared", category:"Терраса", freq:"monthly", time:25,
+      who:["Мама","Майя"],
+      prefs:{Миша:8,Максим:1,Майя:2,Мама:9} },
+
+    { id:"m6", name:"Убрать игровую",
+      type:"shared", category:"Комнаты", freq:"monthly", time:20,
+      who:["Мама"],
+      subtask:{ who:"Миша", name:"Разложить свои игрушки в игровой (подзадача)", time:10, adhdFriendly:true },
+      prefs:{Миша:5,Максим:1,Майя:1,Мама:6} },
+
+    { id:"m7", name:"Убрать лоджию",
+      type:"shared", category:"Лоджия", freq:"monthly", time:20,
+      who:["Мама","Майя"],
+      prefs:{Миша:10,Максим:2,Майя:3,Мама:9} },
+];
+
+const MEMBERS = ["Миша","Максим","Майя","Мама"];
+
+// ─────────────────── 🐘 СЛОН: декомпозиция задач ───────────────────
+// Каждая «дыра в сыре» — 2–10 минут конкретного действия
+const ELEPHANT_STEPS = {
+    "p1": [
+        {name:"Расправить постель и поправить подушки",             time:3},
+        {name:"Собрать вещи с пола и стула — положить по местам",   time:5},
+        {name:"Протереть пыль на полках и подоконнике",             time:5},
+        {name:"Пропылесосить или подмести пол",                     time:7},
+        {name:"Разобрать один захламлённый угол или ящик",          time:5},
+    ],
+    "p2": [
+        {name:"Проверить все углы комнаты на грязное бельё",        time:2},
+        {name:"Собрать всё в одну кучу",                            time:2},
+        {name:"Отнести к машинке или корзине для белья",            time:1},
+    ],
+    "p3": [
+        {name:"Включить утюг — пока греется, разобрать стопку",     time:3},
+        {name:"Погладить рубашки, брюки, юбки",                     time:8},
+        {name:"Погладить мелкие вещи: носки, бельё",                time:5},
+        {name:"Аккуратно сложить и убрать по местам",               time:5},
+    ],
+    "p4": [
+        {name:"Достать вещи из машинки или корзины",                time:2},
+        {name:"Разобрать по стопкам: футболки, штаны, носки",       time:5},
+        {name:"Убрать каждую стопку в свой ящик или полку",         time:4},
+    ],
+    "c1": [
+        {name:"Взять лейку и наполнить водой",                      time:2},
+        {name:"Полить цветы в своей комнате",                       time:3},
+        {name:"Полить цветы в других помещениях",                   time:4},
+        {name:"Вытереть капли с подоконников",                      time:2},
+    ],
+    "c2": [
+        {name:"Проверить миску с водой — долить если мало",         time:2},
+        {name:"Насыпать корм в нужном количестве",                  time:2},
+        {name:"Убрать остатки старого корма",                       time:1},
+    ],
+    "c3": [
+        {name:"Надеть перчатки, взять пакет и совок",               time:1},
+        {name:"Убрать лоток или клетку",                            time:5},
+        {name:"Вымыть или сменить подстилку",                       time:5},
+        {name:"Выбросить мусор и тщательно помыть руки",            time:2},
+    ],
+    "w8": [
+        {name:"Завязать мешок в кухонном ведре",                    time:1},
+        {name:"Пройти по комнатам — собрать малые корзины",         time:3},
+        {name:"Отнести всё к мусоропроводу или баку",               time:3},
+        {name:"Вставить новые пакеты",                              time:2},
+    ],
+    "w7": [
+        {name:"Помыть посуду или загрузить посудомойку",            time:8},
+        {name:"Протереть плиту и столешницу",                       time:5},
+        {name:"Вымыть раковину и кран",                             time:4},
+        {name:"Вынести мусор с кухни",                              time:2},
+        {name:"Помыть пол на кухне",                                time:8},
+    ],
+    "l2": [
+        {name:"Собрать бельё и рассортировать по цвету",            time:5},
+        {name:"Загрузить в машинку и добавить порошок",             time:3},
+        {name:"Запустить нужный режим стирки",                      time:1},
+        {name:"Развесить или разложить после стирки",               time:8},
+    ],
+    "f1": [
+        {name:"Заглянуть в холодильник и кладовую — что есть",      time:3},
+        {name:"Набросать идеи для завтраков",                       time:5},
+        {name:"Набросать идеи для обедов и ужинов",                 time:5},
+        {name:"Записать финальное меню и список покупок",           time:5},
+    ],
+    "f2": [
+        {name:"Проверить и дополнить список покупок",               time:5},
+        {name:"Взять сумки и отправиться в магазин",                time:5},
+        {name:"Закупить продукты по списку",                        time:25},
+        {name:"Разложить покупки по полкам и холодильнику",         time:8},
+    ],
+    "w2": [
+        {name:"Убрать всё лишнее с полок и раковины",               time:3},
+        {name:"Протереть зеркало и поверхности",                    time:4},
+        {name:"Почистить унитаз и раковину",                        time:5},
+        {name:"Помыть пол и поменять полотенца",                    time:5},
+    ],
+    "w3": [
+        {name:"Взять швабру и чистящее средство",                   time:2},
+        {name:"Подмести сухой мусор на лестнице",                   time:3},
+        {name:"Протереть ступени влажной тряпкой сверху вниз",      time:7},
+        {name:"Протереть поручни",                                  time:3},
+    ],
+    "w4": [
+        {name:"Убрать вещи с пола холла",                           time:3},
+        {name:"Подмести или пропылесосить",                         time:4},
+        {name:"Протереть пол влажной шваброй",                      time:6},
+    ],
+    "w5": [
+        {name:"Убрать вещи с пола в столовой и холле",              time:3},
+        {name:"Подмести сухой мусор",                               time:4},
+        {name:"Вымыть пол в столовой шваброй",                      time:8},
+        {name:"Вымыть пол в холле",                                 time:6},
+    ],
+    "w6": [
+        {name:"Убрать обувь и вещи из прихожей",                    time:3},
+        {name:"Протереть полку для обуви и зеркало",                time:3},
+        {name:"Помыть пол в прихожей",                              time:5},
+        {name:"Расставить обувь обратно",                           time:2},
+    ],
+    "l3": [
+        {name:"Достать чистые полотенца из шкафа",                  time:2},
+        {name:"Разложить полотенца по с/у и кухне",                 time:5},
+        {name:"Сменить постельное в одной комнате",                 time:8},
+        {name:"Сменить постельное в остальных комнатах",            time:10},
+    ],
+    "b1": [
+        {name:"Снять старое бельё и сложить в корзину",             time:5},
+        {name:"Надеть пододеяльник и наволочки",                    time:8},
+        {name:"Застелить кровать, равномерно расправить",           time:5},
+    ],
+    "b2": [
+        {name:"Взять швабру и чистящее средство",                   time:2},
+        {name:"Подмести сухой мусор",                               time:3},
+        {name:"Протереть ступени и поручни влажной тряпкой",        time:8},
+    ],
+    "b3": [
+        {name:"Убрать вещи с поверхностей и пола",                  time:4},
+        {name:"Протереть пыль на мебели и подоконниках",            time:6},
+        {name:"Пропылесосить ковёр или диван",                      time:8},
+        {name:"Вымыть пол шваброй",                                 time:8},
+    ],
+    "b4": [
+        {name:"Убрать обувь и вещи в прихожей",                     time:3},
+        {name:"Протереть зеркало и полки",                          time:4},
+        {name:"Пропылесосить коврик",                               time:3},
+        {name:"Вымыть пол",                                         time:7},
+    ],
+    "b5": [
+        {name:"Убрать лишнее с полок и раковины",                   time:3},
+        {name:"Почистить унитаз и раковину",                        time:5},
+        {name:"Протереть зеркало и поверхности",                    time:4},
+        {name:"Помыть пол",                                         time:5},
+    ],
+    "b6": [
+        {name:"Расставить книги, разобрать бумаги на столе",        time:8},
+        {name:"Протереть пыль на полках и столе",                   time:6},
+        {name:"Пропылесосить мягкую мебель",                        time:5},
+        {name:"Вымыть пол",                                         time:7},
+    ],
+    "b7": [
+        {name:"Убрать всё с раковины и ванной",                     time:3},
+        {name:"Почистить унитаз и ванну",                           time:7},
+        {name:"Протереть зеркало и поверхности",                    time:4},
+        {name:"Помыть пол",                                         time:5},
+    ],
+    "m1": [
+        {name:"Разобрать накопившиеся вещи в бельевой",             time:7},
+        {name:"Протереть машинку снаружи и полки",                  time:5},
+        {name:"Протереть пол",                                      time:5},
+    ],
+    "m2": [
+        {name:"Убрать вещи с дивана и пола",                        time:4},
+        {name:"Протереть пыль на мебели и технике",                 time:7},
+        {name:"Пропылесосить диван и ковёр",                        time:8},
+        {name:"Вымыть пол",                                         time:8},
+    ],
+    "m3": [
+        {name:"Собрать использованные принадлежности",              time:3},
+        {name:"Протереть поверхности и зеркала",                    time:6},
+        {name:"Помыть пол",                                         time:7},
+    ],
+    "m4": [
+        {name:"Разобрать бумаги и убрать лишнее со стола",          time:8},
+        {name:"Протереть пыль на столе, полках, технике",           time:6},
+        {name:"Вымыть пол",                                         time:7},
+    ],
+    "m5": [
+        {name:"Убрать вещи, игрушки, посуду с террасы",            time:5},
+        {name:"Подмести и вымыть пол на террасе",                   time:10},
+        {name:"Протереть стол и стулья",                            time:5},
+    ],
+    "m6": [
+        {name:"Убрать игрушки по ящикам и полкам",                  time:8},
+        {name:"Протереть пыль на полках и столах",                  time:5},
+        {name:"Пропылесосить ковёр",                                time:7},
+        {name:"Вымыть пол",                                         time:7},
+    ],
+    "m7": [
+        {name:"Убрать вещи и листву с лоджии",                      time:5},
+        {name:"Подмести лоджию",                                    time:5},
+        {name:"Протереть поверхности и перила",                     time:5},
+        {name:"Помыть пол на лоджии",                               time:7},
+    ],
+};
+
+function elephantStepsFor(task) {
+    if (ELEPHANT_STEPS[task.id]) return ELEPHANT_STEPS[task.id].map(s => ({...s}));
+    // Генерация для кастомных/неизвестных задач по времени
+    const t = task.time || 15;
+    if (t <= 10) return [
+        {name:"Подготовить всё необходимое",                        time:2},
+        {name:"Выполнить основное действие",                        time:Math.max(t-4,3)},
+        {name:"Проверить результат и убрать за собой",              time:2},
+    ];
+    const chunk = Math.max(Math.round(t / 4), 3);
+    return [
+        {name:"Подготовить инструменты и пространство",             time:Math.min(chunk,5)},
+        {name:"Выполнить первую половину задачи",                   time:chunk},
+        {name:"Сделать короткий перерыв, оценить прогресс",        time:2},
+        {name:"Завершить вторую половину",                          time:chunk},
+        {name:"Проверить и прибраться за собой",                    time:Math.min(chunk,5)},
+    ];
+}
+
+// ─────────────────── 😥 СОВЕТЫ «ТРУДНО НАЧАТЬ» ───────────────────
+const HARD_TIPS = [
+    { icon:"🌬", title:"Дыхание 4–6–8",
+      text:"Вдохни носом на 4 счёта, задержи на 6, медленно выдохни ртом на 8. Повтори 3 раза — тело успокоится, и начать станет легче.",
+      action:"Попробовать прямо сейчас" },
+    { icon:"⏱", title:"Правило 2 минут",
+      text:"Пообещай себе: «Я занимаюсь этим ровно 2 минуты, а потом могу остановиться». Почти всегда желание остановиться пропадает само собой.",
+      action:"Поставить таймер на 2 мин" },
+    { icon:"🎯", title:"Только первый шаг",
+      text:"Не думай о всей задаче. Спроси себя: «Что самое крошечное первое действие?» Принести тряпку. Открыть ящик. Просто начать — уже победа.",
+      action:"Один крошечный шаг" },
+    { icon:"💃", title:"1 минута движения",
+      text:"Попрыгай 20 раз, потрясись или потанцуй под любимую песню. Движение запускает дофамин — мозг переходит в режим «делаю».",
+      action:"Подвигаться прямо сейчас" },
+    { icon:"🧊", title:"Умойся холодной водой",
+      text:"Поплещи холодной водой на лицо или запястья — 30 секунд. Это буквально перезагружает нервную систему и снимает оцепенение.",
+      action:"Попробовать" },
+    { icon:"🎵", title:"Музыкальный старт",
+      text:"Включи бодрую любимую песню и договорись: пока она играет — работаешь. Музыка с ритмом ~120 BPM заряжает энергией лучше кофе.",
+      action:"Включить музыку" },
+    { icon:"🤝", title:"Работай не один",
+      text:"Попроси кого-то из семьи просто быть рядом, пока ты делаешь дело — необязательно помогать. Социальное присутствие резко снижает прокрастинацию.",
+      action:"Позвать компанию" },
+    { icon:"🌟", title:"Представь финиш",
+      text:"Закрой глаза на 15 секунд. Представь, как задача уже сделана — облегчение, гордость, чистота вокруг. Этот образ — твоё топливо.",
+      action:"Представить" },
+    { icon:"🦁", title:"Скажи вслух",
+      text:"Произнеси громко: «Я справлялся с трудными вещами раньше — справлюсь и сейчас!» Звучит странно, но мозг воспринимает это серьёзно.",
+      action:"Сказать вслух" },
+    { icon:"🍫", title:"Маленький договор",
+      text:"Пообещай себе конкретную маленькую награду сразу после окончания: стакан сока, 5 минут игры, любимый перекус. Мозгу нужен близкий горизонт.",
+      action:"Придумать награду" },
+    { icon:"✍️", title:"Зачем это важно?",
+      text:"Напиши в уме одно предложение: «Я делаю это, потому что…». Связь с личным смыслом активирует совершенно другой участок мозга.",
+      action:"Вспомнить смысл" },
+    { icon:"😮‍💨", title:"Выдох-сброс",
+      text:"Глубоко вдохни и резко, шумно выдохни через рот — как сдуваешь пыль. Повтори 5 раз. Это сбрасывает физическое напряжение в теле.",
+      action:"Сделать выдохи" },
+    { icon:"🔦", title:"Сузь фокус",
+      text:"Убери всё лишнее с поля зрения. Оставь только то, что нужно прямо сейчас. Хаос вокруг усиливает перегрузку — чистота запускает действие.",
+      action:"Убрать лишнее" },
+    { icon:"🐢", title:"Медленнее = быстрее",
+      text:"Разреши себе делать это ОЧЕНЬ медленно — в два раза медленнее, чем обычно. Снятие давления «сделай быстро» часто приводит к ускорению.",
+      action:"Начать медленно" },
+    { icon:"🪄", title:"5–4–3–2–1 — старт!",
+      text:"Посчитай вслух: 5…4…3…2…1 — и на «1» сразу начни движение. Метод Мел Роббинс: счёт разрывает петлю колебаний.",
+      action:"Считать и вставать!" },
+];
+
+// Ротация двухнедельных задач (база — 23 мая 2026)
+// Нечётные недели от базы → группа A; чётные → группа B
+const BIWEEKLY_BASE = new Date("2026-05-23");
+const BIWEEKLY_A    = ["b2","b5","b6"];        // неделя 23 мая
+const BIWEEKLY_B    = ["b1","b3","b4","b7"];   // неделя 30 мая
+
+function currentBiweeklyIds() {
+    const diffWeeks = Math.max(0, Math.floor((Date.now() - BIWEEKLY_BASE.getTime()) / (7*24*60*60*1000)));
+    return diffWeeks % 2 === 0 ? BIWEEKLY_A : BIWEEKLY_B;
+}
+function biweeklyLabel() {
+    return currentBiweeklyIds() === BIWEEKLY_A ? "23 мая (A)" : "30 мая (B)";
+}
+
+// ─────────────────── УМНЫЙ АЛГОРИТМ РАСПРЕДЕЛЕНИЯ ───────────────────
+// Логика по типам:
+//   personal   → копия каждому участнику из `who`
+//   adhd       → назначается из `who` по наивысшему предпочтению (обычно Миша)
+//   mom_primary→ всегда Маме + авто-подзадача помощнику (helper)
+//   shared     → балансировка среди `who` по равным средним
+
+function assignBalanced(tasks) {
+    const result  = [];   // итоговые task-объекты со sprint/assignee
+
+    // 1. PERSONAL — копия каждому
+    tasks.filter(t => t.type === "personal").forEach(t => {
+        (t.who || MEMBERS).forEach(m => {
+            result.push({ ...t, id: t.id+"_"+m, assignee: m, done:false, sprint:"sat", isPersonal:true });
+        });
+    });
+
+    // 2. ADHD — назначаем первому из who с наивысшим предпочтением
+    tasks.filter(t => t.type === "adhd").forEach(t => {
+        const who  = t.who || ["Миша"];
+        const best = who.reduce((a,b) => (t.prefs[a]||1) >= (t.prefs[b]||1) ? a : b);
+        result.push({ ...t, assignee: best, done:false, sprint:"sat" });
+    });
+
+    // 3. MOM_PRIMARY — Маме + подзадача помощнику
+    tasks.filter(t => t.type === "mom_primary").forEach(t => {
+        result.push({ ...t, assignee:"Мама", done:false, sprint:"sat" });
+        if (t.helper) {
+            result.push({
+                ...t,
+                id: t.id+"_helper",
+                name: t.helper.name,
+                time: t.helper.time,
+                assignee: t.helper.who,
+                done: false, sprint:"sat",
+                isHelper: true, optional: t.helper.optional || false,
+                adhdFriendly: t.helper.adhdFriendly || false,
+                parentName: t.name,
+            });
+        }
+    });
+
+    // 4. SHARED — балансировка среди who
+    const sharedTasks = tasks.filter(t => t.type === "shared");
+
+    // Группируем по наборам who и балансируем внутри каждой группы
+    // Упрощение: единый жадный алгоритм по всем shared, но только среди eligible
+    const counts = Object.fromEntries(MEMBERS.map(m => [m, 0]));
+    const sums   = Object.fromEntries(MEMBERS.map(m => [m, 0]));
+
+    // Сортируем: сначала задачи с явным лидером (большой разрыв между лучшим и вторым)
+    const sorted = [...sharedTasks].sort((a,b) => {
+        const advantage = t => {
+            const vals = (t.who||MEMBERS).map(m => t.prefs[m]||1).sort((x,y)=>y-x);
+            return (vals[0]||1) - (vals[1]||1);
+        };
+        return advantage(b) - advantage(a);
+    });
+
+    sorted.forEach(t => {
+        const eligible = t.who || MEMBERS;
+        // Выбираем: наивысшее предпочтение + штраф за тех, у кого уже много задач
+        let best = null, bestScore = -Infinity;
+        eligible.forEach(m => {
+            const pref    = t.prefs[m] || 1;
+            const penalty = counts[m] * 0.3;
+            const curAvg  = counts[m] > 0 ? sums[m]/counts[m] : 5;
+            const gap     = Math.max(0, 4 - curAvg); // тянем отстающих вверх
+            const score   = pref - penalty + gap * 0.4;
+            if (score > bestScore) { bestScore = score; best = m; }
+        });
+        if (!best) best = eligible[0];
+        counts[best]++;
+        sums[best] += (t.prefs[best]||1);
+        result.push({ ...t, assignee: best, done:false, sprint:"sat" });
+
+        // Авто-подзадача для Миши если есть
+        if (t.subtask) {
+            result.push({
+                ...t,
+                id: t.id+"_sub",
+                name: t.subtask.name,
+                time: t.subtask.time,
+                assignee: t.subtask.who,
+                adhdFriendly: t.subtask.adhdFriendly || false,
+                done: false, sprint:"sat",
+                isMishaSubtask: true,
+                parentName: t.name,
+            });
+        }
+    });
+
+    return result;
+}
+
+
+// Статистика распределения
+function calcStats(tasks) {
+    const stats = {};
+    MEMBERS.forEach(m => { stats[m] = { count:0, sum:0, avg:0, tasks:[] }; });
+    tasks.forEach(t => {
+        const m = t.assignee;
+        if (!stats[m]) return;
+        stats[m].count++;
+        stats[m].sum += (t.prefs[m] || 1);
+        stats[m].tasks.push(t);
+    });
+    MEMBERS.forEach(m => {
+        stats[m].avg = stats[m].count ? +(stats[m].sum / stats[m].count).toFixed(2) : 0;
+    });
+    return stats;
+}
+
+// ─────────────────── СОСТОЯНИЕ ───────────────────
+let state = {
+    tasks: [],
+    allTasksPool: JSON.parse(JSON.stringify(FULL_TASKS_DB)),
+    currentUser: "Администратор",
+    stage: "sprint_selection",
+    selectedSprintTaskIds: new Set(),
+    mishaPoints: 0,
+    logsMisha: [],
+    achievements: [],
+    adultMode: { Майя:false, Максим:false },
+    last100PercentDate: null,
+    dynamicPrefs: {},
+    mishaFrogTaskId: null,
+    customTasks: [],          // пользовательские задачи (добавленные вручную)
+    sprintStreak: 0,          // серия 100%-спринтов подряд
+    lastSprintWeek: null,     // ключ недели последнего 100%
+    frogTaskIds: {},          // { userName: taskId } — лягушка каждого участника
+    taskOrder: {}             // { userName: [taskId,...] } — личный порядок задач
+};
+
+function saveState() {
+    const { allTasksPool, ...rest } = state;   // пул не сохраняем — берём всегда из кода
+    localStorage.setItem("b27_v2", JSON.stringify({
+        ...rest,
+        selectedSprintTaskIds: Array.from(state.selectedSprintTaskIds)
+    }));
+}
+
+function loadState() {
+    const saved = localStorage.getItem("b27_v2");
+    if (saved) {
+        try {
+            const d = JSON.parse(saved);
+            Object.assign(state, d);
+            state.selectedSprintTaskIds = new Set(d.selectedSprintTaskIds || []);
+        } catch(e) { console.warn("Ошибка загрузки:", e); }
+    }
+    // Всегда переинициализируем пул из константы — чтобы type/freq/прочие поля были актуальны
+    state.allTasksPool = JSON.parse(JSON.stringify(FULL_TASKS_DB));
+    // Добавляем пользовательские задачи поверх базы
+    if (state.customTasks && state.customTasks.length) {
+        state.allTasksPool = [...state.allTasksPool, ...JSON.parse(JSON.stringify(state.customTasks))];
+    }
+    // Миграция: старый mishaFrogTaskId → новый frogTaskIds
+    if (!state.frogTaskIds) state.frogTaskIds = {};
+    if (state.mishaFrogTaskId && !state.frogTaskIds["Миша"]) {
+        state.frogTaskIds["Миша"] = state.mishaFrogTaskId;
+    }
+    if (!state.taskOrder) state.taskOrder = {};
+}
+
+// ─────────────────── РЕНДЕР: выбор спринта ───────────────────
+const TYPE_META = {
+    personal:    { label:"👤 Личные (каждый за себя)",       color:"bg-blue-50   border-blue-200",   badge:"bg-blue-100 text-blue-700"   },
+    adhd:        { label:"⚡ Миша (короткие, конкретные)",   color:"bg-green-50  border-green-200",  badge:"bg-green-100 text-green-700" },
+    mom_primary: { label:"👩 Мама (+ опц. помощники)",       color:"bg-amber-50  border-amber-200",  badge:"bg-amber-100 text-amber-700" },
+    shared:      { label:"🔄 Распределяемые (подростки+мама)", color:"bg-purple-50 border-purple-200", badge:"bg-purple-100 text-purple-700"},
+    custom:      { label:"✏️ Свои задачи",                   color:"bg-orange-50 border-orange-200", badge:"bg-orange-100 text-orange-700"},
+};
+
+function renderAdminSelection() {
+    const pool = state.allTasksPool;
+    const sel  = state.selectedSprintTaskIds;
+    const selCount = sel.size;
+
+    // Считаем, сколько задач в каждом пресете
+    const biIds = currentBiweeklyIds();
+    const easySet   = new Set(pool.filter(t => t.type==="personal"||t.type==="adhd").map(t=>t.id));
+    const normalSet = new Set(pool.filter(t => {
+        if (t.freq==="monthly")  return false;
+        if (t.freq==="biweekly") return biIds.includes(t.id);
+        return true;
+    }).map(t=>t.id));
+    const fullSet   = new Set(pool.map(t=>t.id));
+
+    // Определяем активный пресет (точное совпадение)
+    const setsEq = (a,b) => a.size===b.size && [...a].every(x=>b.has(x));
+    const activePreset = setsEq(sel,easySet) ? "easy"
+                       : setsEq(sel,normalSet) ? "normal"
+                       : setsEq(sel,fullSet) ? "full"
+                       : sel.size > 0 ? "custom" : "none";
+
+    // Вспомогательная функция рендера строки задачи в списке выбора
+    function taskSelRow(t) {
+        const chk        = state.selectedSprintTaskIds.has(t.id) ? "checked" : "";
+        const who        = t.who ? t.who.join(", ") : "все";
+        const subNote    = t.subtask  ? `<span class="text-xs text-green-600 ml-1">+ подзадача Миши</span>` : "";
+        const helperNote = t.helper   ? `<span class="text-xs text-amber-600 ml-1">+ ${t.helper.who} помогает</span>` : "";
+        const noteTag    = t.note     ? `<span class="text-xs text-gray-400 ml-1">💬 ${t.note}</span>` : "";
+        const customTag  = t.isCustom ? `<span class="text-xs text-orange-500 ml-1">✏️ своя</span>` : "";
+        const prefsBar   = (t.who || MEMBERS).map(m =>
+            `<span class="inline-flex flex-col items-center" title="${m}: ${t.prefs[m]||1}">
+                <span style="width:16px;height:${(t.prefs[m]||1)*2}px;background:${prefColor(t.prefs[m]||1)};border-radius:2px;display:block;"></span>
+                <span class="text-gray-400 text-xs">${m[0]}</span>
+             </span>`
+        ).join("");
+        const deleteBtn = t.isCustom
+            ? `<button class="deleteCustomTask shrink-0 text-red-300 hover:text-red-500 text-sm px-1" data-id="${t.id}" title="Удалить задачу">🗑</button>`
+            : "";
+        return `
+        <label class="flex items-center gap-3 border-b last:border-0 p-2 hover:bg-gray-50 cursor-pointer">
+            <input type="checkbox" class="task-checkbox w-4 h-4 shrink-0" data-id="${t.id}" ${chk}>
+            <div class="flex-1 min-w-0">
+                <span class="text-sm">${t.name}</span>
+                ${subNote}${helperNote}${noteTag}${customTag}
+                <span class="block text-xs text-gray-400">→ ${who}</span>
+            </div>
+            <span class="text-xs text-gray-400 whitespace-nowrap">⏱ ${t.time} мин</span>
+            <div class="flex gap-0.5 items-end shrink-0">${prefsBar}</div>
+            ${deleteBtn}
+        </label>`;
+    }
+
+    let taskRows = "";
+    ["personal","adhd","mom_primary","shared"].forEach(type => {
+        const meta  = TYPE_META[type];
+        const group = pool.filter(t => t.type === type && !t.isCustom);
+        if (!group.length) return;
+
+        taskRows += `<div class="mt-4 border rounded-xl overflow-hidden">
+            <div class="px-3 py-2 font-semibold text-sm ${meta.color} border-b">${meta.label}</div>`;
+        group.forEach(t => { taskRows += taskSelRow(t); });
+        taskRows += `</div>`;
+    });
+
+    // Блок пользовательских задач
+    const customGroup = pool.filter(t => t.isCustom);
+    if (customGroup.length) {
+        const meta = TYPE_META.custom;
+        taskRows += `<div class="mt-4 border-2 border-orange-200 rounded-xl overflow-hidden">
+            <div class="px-3 py-2 font-semibold text-sm ${meta.color} border-b">${meta.label}</div>`;
+        customGroup.forEach(t => { taskRows += taskSelRow(t); });
+        taskRows += `</div>`;
+    }
+
+    const hasActiveSprint = state.tasks.length > 0;
+
+    return `
+    <div class="space-y-4">
+        <div class="bg-red-50 border border-red-200 rounded-2xl shadow-lg p-4">
+            <div class="flex flex-wrap justify-between items-center gap-3 mb-3">
+                <div>
+                    <h2 class="text-xl font-bold text-red-800">🔧 Администратор</h2>
+                    <p class="text-sm text-red-600">Подзадачи Миши и помощники добавляются автоматически</p>
+                </div>
+                ${renderUserSwitcher("Администратор")}
+            </div>
+            <div class="flex gap-2">
+                <span class="flex-1 text-center bg-red-600 text-white font-bold px-4 py-2 rounded-xl text-sm">📋 Задачи спринта</span>
+                ${hasActiveSprint
+                    ? `<button id="goProgress" class="flex-1 bg-white border border-red-200 text-red-700 hover:bg-red-50 font-bold px-4 py-2 rounded-xl text-sm">👥 Прогресс семьи</button>`
+                    : `<span class="flex-1 text-center bg-white border border-red-100 text-red-300 font-bold px-4 py-2 rounded-xl text-sm">👥 Прогресс семьи</span>`}
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-lg p-5">
+            <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
+                <div>
+                    <h2 class="text-xl font-bold text-amber-800">Выбор задач</h2>
+                    <p class="text-sm text-gray-500">Выбери пресет или отметь задачи вручную</p>
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                    <button id="presetEasy"   class="px-3 py-1.5 rounded-xl text-sm font-medium text-left leading-tight border-2 transition-all ${activePreset==="easy"   ? "bg-blue-500  text-white  border-blue-500"  : "bg-blue-50  text-blue-700  border-blue-200  hover:border-blue-400"}">☀️ Лёгкий<span class="block text-xs font-normal opacity-80">${easySet.size} задач</span></button>
+                    <button id="presetNormal" class="px-3 py-1.5 rounded-xl text-sm font-medium text-left leading-tight border-2 transition-all ${activePreset==="normal" ? "bg-green-500 text-white  border-green-500" : "bg-green-50 text-green-700 border-green-200 hover:border-green-400"}">🧹 Обычный<span class="block text-xs font-normal opacity-80">${normalSet.size} задач · ${biweeklyLabel()}</span></button>
+                    <button id="presetFull"   class="px-3 py-1.5 rounded-xl text-sm font-medium text-left leading-tight border-2 transition-all ${activePreset==="full"   ? "bg-red-500   text-white  border-red-500"   : "bg-red-50   text-red-700   border-red-200   hover:border-red-400"}">💪 Генеральная<span class="block text-xs font-normal opacity-80">${fullSet.size} задач</span></button>
+                    ${activePreset==="custom" ? `<span class="px-3 py-1.5 rounded-xl text-sm font-medium bg-amber-100 text-amber-700 border-2 border-amber-400 leading-tight">✏️ Свой выбор<span class="block text-xs font-normal opacity-80">${selCount} задач</span></span>` : ""}
+                    <button id="addCustomTaskBtn" class="px-3 py-1.5 rounded-xl text-sm font-medium border-2 border-dashed border-orange-300 text-orange-600 hover:bg-orange-50 leading-tight">➕ Добавить<span class="block text-xs font-normal opacity-80">свою задачу</span></button>
+                </div>
+            </div>
+            <div>${taskRows}</div>
+            <div class="flex items-center justify-between mt-4 flex-wrap gap-3">
+                <p class="text-gray-600">Выбрано: <strong>${selCount}</strong> из ${pool.length}</p>
+                <button id="distributeBtn" class="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2 rounded-xl font-semibold shadow ${selCount===0?'opacity-40 cursor-not-allowed':''}" ${selCount===0?'disabled':''}>
+                    Распределить и начать →
+                </button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function prefColor(v) {
+    if (v >= 8) return "#10b981";
+    if (v >= 5) return "#f59e0b";
+    if (v >= 3) return "#f97316";
+    return "#ef4444";
+}
+
+// ─────────────────── РЕНДЕР: статистика распределения ───────────────────
+function renderStats(tasks) {
+    const stats = calcStats(tasks);
+    const colors = { Миша:"blue", Максим:"purple", Майя:"pink", Мама:"amber" };
+    let html = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">`;
+    MEMBERS.forEach(m => {
+        const s = stats[m];
+        const c = colors[m];
+        html += `
+        <div class="bg-${c}-50 border border-${c}-200 rounded-xl p-3 text-center">
+            <p class="font-bold text-${c}-800">${m}</p>
+            <p class="text-2xl font-bold text-${c}-600">${s.avg}</p>
+            <p class="text-xs text-gray-500">среднее предпочтение</p>
+            <p class="text-xs text-gray-400">${s.count} задач</p>
+        </div>`;
+    });
+    html += `</div>`;
+    return html;
+}
+
+// ─────────────────── ПЕРЕКЛЮЧАТЕЛЬ ПОЛЬЗОВАТЕЛЯ (общий) ───────────────────
+function renderUserSwitcher(current) {
+    const opts = [...MEMBERS, "Администратор"];
+    return `<select id="userSwitcher" class="border rounded-lg px-2 py-1 text-sm">
+        ${opts.map(m => `<option ${m===current?"selected":""}>${m}</option>`).join("")}
+    </select>`;
+}
+
+// ─────────────────── ВИД АДМИНИСТРАТОРА ───────────────────
+function renderAdminView() {
+    const famDone  = state.tasks.filter(t=>t.done).length;
+    const famTotal = state.tasks.length;
+    const famPct   = famTotal ? Math.round(famDone/famTotal*100) : 0;
+    const stats    = calcStats(state.tasks);
+
+    const memberColors = { Миша:"blue", Максим:"purple", Майя:"pink", Мама:"amber" };
+
+    let memberSections = MEMBERS.map(m => {
+        const mTasks   = state.tasks.filter(t => t.assignee === m);
+        const pending  = mTasks.filter(t => !t.done);
+        const done     = mTasks.filter(t => t.done);
+        const c        = memberColors[m] || "gray";
+        const mPct     = mTasks.length ? Math.round(done.length/mTasks.length*100) : 0;
+
+        const taskCards = pending.map(t => `
+            <div class="flex items-center gap-2 border-b py-2 group">
+                <span class="flex-1 text-sm">${t.name}</span>
+                <span class="text-xs text-gray-400 whitespace-nowrap">⏱ ${t.time} мин</span>
+                <span class="text-xs px-1 rounded" style="background:${prefColor(t.prefs[m]||1)}22;color:${prefColor(t.prefs[m]||1)}">
+                    ${t.prefs[m]||1}/10
+                </span>
+                <button class="reassignBtn text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" data-id="${t.id}">↪ Передать</button>
+            </div>`).join("");
+
+        const doneCards = done.map(t => `
+            <div class="flex items-center gap-2 border-b py-1 group">
+                <span class="flex-1 text-xs line-through text-gray-400">${t.name}</span>
+                <span class="text-xs text-gray-300">⏱ ${t.time} мин</span>
+                <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" data-id="${t.id}">↩ Вернуть</button>
+            </div>`).join("");
+
+        return `
+        <div class="bg-white rounded-2xl shadow-sm p-4">
+            <div class="flex items-center justify-between mb-2">
+                <div>
+                    <span class="font-bold text-${c}-700">${m}</span>
+                    <span class="text-xs text-gray-400 ml-2">${mTasks.length} задач · ср. предпочтение ${stats[m].avg}</span>
+                </div>
+                <span class="text-sm font-semibold text-${c}-600">${mPct}%</span>
+            </div>
+            <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3">
+                <div class="bg-${c}-400 h-1.5 rounded-full" style="width:${mPct}%"></div>
+            </div>
+            ${taskCards || `<p class="text-xs text-gray-400">Все задачи выполнены</p>`}
+            ${done.length ? `<details class="mt-2"><summary class="text-xs text-gray-400 cursor-pointer">✅ Выполнено (${done.length})</summary>${doneCards}</details>` : ""}
+        </div>`;
+    }).join("");
+
+    return `
+    <div class="space-y-4">
+        <div class="bg-red-50 border border-red-200 rounded-2xl shadow-lg p-4">
+            <div class="flex flex-wrap gap-3 items-center justify-between mb-3">
+                <div>
+                    <h2 class="text-xl font-bold text-red-800">🔧 Администратор</h2>
+                    <p class="text-sm text-red-600">Все задачи семьи · можно передать любое дело</p>
+                </div>
+                <div class="flex gap-2 flex-wrap items-center">
+                    ${renderUserSwitcher("Администратор")}
+                    <button id="showStats" class="bg-amber-100 text-amber-800 px-3 py-1 rounded-xl text-sm">📊 Статистика</button>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button id="resetSprintBtn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-xl text-sm">📋 Задачи спринта</button>
+                <span class="flex-1 text-center bg-white border border-red-200 text-red-700 font-bold px-4 py-2 rounded-xl text-sm">👥 Прогресс семьи</span>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-3 shadow-sm">
+            <div class="flex justify-between text-xs text-gray-500 mb-1">
+                <span>Прогресс семьи</span><span>${famDone}/${famTotal} задач</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="bg-green-500 h-3 rounded-full transition-all" style="width:${famPct}%"></div>
+            </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">${memberSections}</div>
+    </div>`;
+}
+
+// ─────────────────── РЕНДЕР: выполнение (обычный участник) ───────────────────
+function renderExecution() {
+    const user = state.currentUser;
+    if (user === "Администратор") return renderAdminView();
+
+    const myTasks  = state.tasks.filter(t => t.assignee === user);
+    ensureTaskOrder(user, myTasks);
+    const satTasksRaw = myTasks.filter(t => t.sprint === "sat" && !t.done);
+    const sunTasksRaw = myTasks.filter(t => t.sprint === "sun" && !t.done);
+    const satTasks = getSortedUserTasks(satTasksRaw, user);
+    const sunTasks = getSortedUserTasks(sunTasksRaw, user);
+    const done     = myTasks.filter(t => t.done);
+    const totalLeft = [...satTasks, ...sunTasks].reduce((s,t)=>s+t.time,0);
+    const pct      = myTasks.length ? Math.round(done.length / myTasks.length * 100) : 0;
+    const isMisha  = user === "Миша";
+    const isMama   = user === "Мама";
+
+    // Лягушка — для всех участников
+    const myFrogId = getFrogId(user);
+    const frogTask = myFrogId ? myTasks.find(t => t.id === myFrogId && !t.done) : null;
+    let frogBanner = "";
+    if (frogTask) {
+        frogBanner = `
+        <div class="bg-lime-100 border-2 border-lime-400 rounded-2xl p-4 flex items-center gap-3">
+            <span style="font-size:3rem;flex-shrink:0">🐸</span>
+            <div>
+                <p class="font-black text-lime-900" style="font-size:1.15rem">Съешь лягушку первой!</p>
+                <p class="text-lime-800 font-semibold text-sm">${frogTask.name}</p>
+                <p class="text-lime-600 text-xs">Сделай самое скучное — потом будет легче!</p>
+            </div>
+        </div>`;
+    } else if (!myFrogId) {
+        frogBanner = `
+        <div class="bg-lime-50 border border-lime-200 rounded-2xl p-3 flex items-center gap-3">
+            <span style="font-size:2rem;flex-shrink:0">🐸</span>
+            <div>
+                <p class="font-bold text-lime-800">Выбери лягушку!</p>
+                <p class="text-lime-600 text-xs">Нажми 🐸 на задаче — начни с неё!</p>
+            </div>
+        </div>`;
+    }
+
+    const famDone  = state.tasks.filter(t=>t.done).length;
+    const famTotal = state.tasks.length;
+    const famPct   = famTotal ? Math.round(famDone/famTotal*100) : 0;
+
+    return `
+    <div class="space-y-4">
+        <div class="bg-white rounded-2xl shadow-lg p-4 flex flex-wrap gap-3 items-center justify-between">
+            <div>
+                <h2 class="text-xl font-bold text-amber-800">Спринт — ${user}</h2>
+                <p class="text-sm text-gray-500">${totalLeft} мин осталось · ${pct}% выполнено</p>
+            </div>
+            <div class="flex gap-2 flex-wrap items-center">
+                ${isMisha ? `<div class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-bold">⭐ ${state.mishaPoints} баллов</div>` : ""}
+                ${state.sprintStreak > 1 ? `<div class="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-sm font-bold" title="Серия спринтов">🔥 ${state.sprintStreak} подряд</div>` : ""}
+                ${renderUserSwitcher(user)}
+                ${isMama ? `<button id="goAdmin" class="bg-red-100 text-red-700 px-3 py-1 rounded-xl text-sm font-semibold">🔧 Режим адм.</button>` : ""}
+                <button id="showStats"    class="bg-amber-100 text-amber-800 px-3 py-1 rounded-xl text-sm">📊 Стат.</button>
+                <button id="resetSprintBtn" class="bg-gray-100 text-gray-600 px-3 py-1 rounded-xl text-sm">↩ Пересобрать</button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-3 shadow-sm">
+            <div class="flex justify-between text-xs text-gray-500 mb-1">
+                <span>Прогресс семьи</span><span>${famDone}/${famTotal} задач</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="bg-green-500 h-3 rounded-full transition-all" style="width:${famPct}%"></div>
+            </div>
+        </div>
+
+        <div class="w-full bg-gray-100 rounded-full h-2">
+            <div class="bg-amber-500 h-2 rounded-full" style="width:${pct}%"></div>
+        </div>
+
+        ${frogBanner}
+
+        <div class="grid md:grid-cols-2 gap-4">
+            <div>
+                <h3 class="font-bold text-blue-700 mb-2">📅 Суббота (${satTasks.length})</h3>
+                ${satTasks.length ? satTasks.map((t,i)=>renderCard(t,user,i,satTasks.length)).join("") : `<p class="text-gray-400 text-sm">Нет задач</p>`}
+            </div>
+            <div>
+                <h3 class="font-bold text-purple-700 mb-2">📅 Воскресенье (${sunTasks.length})</h3>
+                ${sunTasks.length ? sunTasks.map((t,i)=>renderCard(t,user,i,sunTasks.length)).join("") : `<p class="text-gray-400 text-sm">Нет задач</p>`}
+                ${done.length ? `
+                <details class="mt-3">
+                    <summary class="text-sm text-gray-500 cursor-pointer">✅ Выполнено (${done.length})</summary>
+                    <div class="mt-1 space-y-1">
+                    ${done.map(t=>`
+                        <div class="flex items-center gap-2 border-b py-1 group">
+                            <span class="flex-1 text-sm line-through text-gray-400">${t.name}</span>
+                            <span class="text-xs text-gray-300">⏱ ${t.time} мин</span>
+                            <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" data-id="${t.id}">↩ Вернуть</button>
+                        </div>`).join("")}
+                    </div>
+                </details>` : ""}
+            </div>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <p class="font-bold text-amber-800">🏆 Награда за спринт</p>
+            ${pct===100
+                ? `<p class="text-green-700 font-semibold">Выполнено 100%! Выберите награду: 🍿 Фильм  🍦 Мороженое  🌲 Природа</p>`
+                : `<p class="text-gray-500 text-sm">Выполни все задачи — выбери награду для семьи</p>`}
+        </div>
+    </div>`;
+}
+
+function renderCard(task, user, orderIdx, orderTotal) {
+    const pref        = task.prefs?.[user] || 1;
+    const isMisha     = user === "Миша";
+    const canReassign = (user === "Мама" || user === "Администратор");
+    const isFrog      = task.id === getFrogId(user);
+    const isAdmin     = user === "Администратор";
+
+    const badges = [];
+    if (isFrog)              badges.push(`<span class="text-xs bg-lime-300 text-lime-900 px-1.5 py-0.5 rounded-full font-bold">🐸 ЛЯГУШКА</span>`);
+
+    if (task.isPersonal)     badges.push(`<span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">👤 Личное</span>`);
+    if (task.isMishaSubtask) badges.push(`<span class="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full">🧩 Подзадача</span>`);
+    if (task.isHelper)       badges.push(`<span class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">${task.optional ? "🙋 Опц. помощь" : "🤝 Помощь"}</span>`);
+
+    const parentRef = (task.isMishaSubtask || task.isHelper) && task.parentName
+        ? `<p class="text-xs text-gray-400 italic">→ ${task.parentName}</p>` : "";
+    const noteRef   = task.note
+        ? `<p class="text-xs text-gray-400 mt-0.5">💬 ${task.note}</p>` : "";
+    const badgeRow  = badges.length ? `<div class="flex flex-wrap gap-1 mt-1">${badges.join("")}</div>` : "";
+
+    // Подзадачи
+    const subs = task.customSubtasks || [];
+    const subsDoneCount = subs.filter(s=>s.done).length;
+    const subList = subs.map(s => `
+        <div class="flex items-center gap-1.5 py-0.5 group/sub">
+            <input type="checkbox" class="subtaskCheck w-3.5 h-3.5 cursor-pointer" data-task-id="${task.id}" data-sub-id="${s.id}" ${s.done?"checked":""}>
+            <span class="text-xs flex-1 ${s.done?"line-through text-gray-300":"text-gray-600"}">${s.name}</span>
+            <button class="deleteSubtask text-gray-200 hover:text-red-400 text-xs opacity-0 group-hover/sub:opacity-100 transition-opacity leading-none" data-task-id="${task.id}" data-sub-id="${s.id}">×</button>
+        </div>`).join("");
+    const subtaskSection = `
+        <div class="mt-2 pl-2 border-l-2 border-gray-100">
+            ${subs.length ? `<p class="text-xs text-gray-400 mb-0.5">Подзадачи: ${subsDoneCount}/${subs.length}</p>` : ""}
+            ${subList}
+            <div class="flex gap-1 mt-1" id="subInput_${task.id}" style="display:none">
+                <input type="text" class="newSubtaskInput text-xs border rounded-lg px-2 py-1 flex-1 focus:outline-none focus:ring-1 focus:ring-amber-400" placeholder="Текст подзадачи..." data-task-id="${task.id}">
+                <button class="confirmSubtask text-xs bg-green-500 text-white px-2.5 rounded-lg font-bold" data-task-id="${task.id}">✓</button>
+            </div>
+            <button class="toggleSubInput text-xs text-blue-400 hover:text-blue-600 mt-0.5" data-task-id="${task.id}">＋ подзадача</button>
+        </div>`;
+
+    return `
+    <div class="bg-white rounded-xl p-3 mb-2 shadow-sm ${isFrog ? "border-2 border-lime-400" : "border"}">
+        <div class="flex items-start gap-3">
+            <input type="checkbox" class="doneCheck mt-1 w-4 h-4 cursor-pointer" data-id="${task.id}">
+            <div class="flex-1">
+                <p class="font-medium text-sm">${task.name}</p>
+                <p class="text-xs text-gray-400">${task.category} · ${task.time} мин</p>
+                <div class="mt-1 flex items-center gap-1">
+                    <div style="width:${pref*9}px;height:4px;background:${prefColor(pref)};border-radius:2px;"></div>
+                    <span class="text-xs text-gray-400">${pref}/10</span>
+                </div>
+                ${badgeRow}
+                ${parentRef}
+                ${noteRef}
+            </div>
+            <div class="flex flex-col gap-1 items-end">
+                ${!isAdmin && orderTotal > 1 ? `
+                <div class="flex flex-col items-center">
+                    <button class="orderUpBtn text-gray-300 hover:text-amber-500 leading-none text-base px-1" data-id="${task.id}" title="Выше в очереди" ${orderIdx===0?"style='opacity:.25;pointer-events:none'":""}>↑</button>
+                    <span class="text-gray-300 text-xs font-mono leading-none">${orderIdx+1}</span>
+                    <button class="orderDownBtn text-gray-300 hover:text-amber-500 leading-none text-base px-1" data-id="${task.id}" title="Ниже в очереди" ${orderIdx===orderTotal-1?"style='opacity:.25;pointer-events:none'":""}>↓</button>
+                </div>` : ""}
+                ${task.sprint==="sat"
+                    ? `<button class="deferBtn text-xs text-blue-500" data-id="${task.id}">→ вс</button>`
+                    : ""}
+                ${canReassign && !task.done
+                    ? `<button class="reassignBtn text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-lg" data-id="${task.id}">↪ Передать</button>`
+                    : ""}
+            </div>
+        </div>
+        ${subtaskSection}
+        ${!isAdmin ? `
+        <div class="flex gap-2 mt-2 flex-wrap">
+            <button class="timerBtn font-bold text-sm bg-red-500 text-white px-3 py-2 rounded-xl" data-id="${task.id}">${isMisha ? `🍅 Помидор · +${task.time*2}⭐` : "🍅 Помидор"}</button>
+            <button class="frogBtn font-bold text-sm px-3 py-2 rounded-xl ${isFrog ? "bg-lime-400 text-lime-900" : "bg-lime-100 text-lime-700"}" data-id="${task.id}">${isFrog ? "🐸 Это лягушка!" : "🐸 Лягушка?"}</button>
+            <button class="elephantBtn text-sm bg-orange-100 text-orange-700 px-3 py-2 rounded-xl font-bold" data-id="${task.id}">🐘 Слон?</button>
+            <button class="hardBtn text-sm bg-red-100 text-red-600 px-3 py-2 rounded-xl font-bold" data-id="${task.id}">😥 Трудно</button>
+        </div>` : ""}
+    </div>`;
+}
+
+// ─────────────────── МОДАЛКА: передать дело ───────────────────
+function showReassignModal(taskId) {
+    const task = state.tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const others = MEMBERS.filter(m => m !== task.assignee);
+    const prefRows = others.map(m => {
+        const p = task.prefs?.[m] || 1;
+        return `
+        <label class="flex items-center justify-between gap-3 p-2 border rounded-xl hover:bg-amber-50 cursor-pointer has-[:checked]:bg-amber-100 has-[:checked]:border-amber-400">
+            <div class="flex items-center gap-2">
+                <input type="radio" name="newAssignee" value="${m}" class="w-4 h-4">
+                <span class="font-medium">${m}</span>
+            </div>
+            <div class="flex items-center gap-1">
+                <div style="width:${p*8}px;height:6px;background:${prefColor(p)};border-radius:3px;"></div>
+                <span class="text-xs text-gray-500">${p}/10</span>
+            </div>
+        </label>`;
+    }).join("");
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4";
+    modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+        <h3 class="text-lg font-bold text-amber-800 mb-1">Передать дело</h3>
+        <p class="text-sm text-gray-500 mb-4">«${task.name}» сейчас у <b>${task.assignee}</b></p>
+        <div class="space-y-2 mb-5">${prefRows}</div>
+        <div class="flex gap-2">
+            <button id="confirmReassign" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl font-semibold">Передать</button>
+            <button id="cancelReassign" class="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded-xl">Отмена</button>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
+
+    modal.querySelector("#cancelReassign").onclick = () => modal.remove();
+    modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+
+    modal.querySelector("#confirmReassign").onclick = () => {
+        const selected = modal.querySelector("input[name='newAssignee']:checked");
+        if (!selected) { alert("Выбери кому передать"); return; }
+        const prev = task.assignee;
+        task.assignee = selected.value;
+        modal.remove();
+        saveState();
+        render();
+        // Показываем уведомление
+        const toast = document.createElement("div");
+        toast.className = "fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-xl z-50 shadow-lg";
+        toast.textContent = `«${task.name}» передано от ${prev} → ${task.assignee}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    };
+}
+
+// ─────────────────── ПОМИДОР (таймер для всех) ───────────────────
+function showPomodoroTimer(task, user) {
+    user = user || state.currentUser;
+    const totalSecs = task.time * 60;
+    let remaining   = totalSecs;
+    let paused      = false;
+    let iv          = null;
+    const pts       = task.time * 2;
+    const R         = 80;
+    const CIRC      = Math.round(2 * Math.PI * R); // ~502
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 flex flex-col items-center justify-center z-50 p-4 select-none";
+    modal.style.background = "linear-gradient(135deg,#7c2d12,#c2410c)";
+    document.body.appendChild(modal);
+
+    function fmt(s) {
+        return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
+    }
+    function phase() {
+        const pct = remaining / totalSecs;
+        if (pct > 0.7) return { e:"🍅", msg:"Поехали!",    clr:"#f97316" };
+        if (pct > 0.4) return { e:"💪", msg:"Ты крутой!",  clr:"#ef4444" };
+        if (pct > 0.1) return { e:"🔥", msg:"Почти!",      clr:"#dc2626" };
+        return               { e:"⭐", msg:"Давай!!",      clr:"#7c3aed" };
+    }
+
+    function draw() {
+        const p   = phase();
+        const off = Math.round(CIRC * (1 - remaining / totalSecs));
+        modal.innerHTML = `
+        <div class="text-center w-full max-w-xs">
+            <p class="text-white/60 text-sm mb-3 tracking-wide">${task.name}</p>
+            <div class="relative inline-flex items-center justify-center mb-4">
+                <svg width="200" height="200" style="transform:rotate(-90deg)">
+                    <circle cx="100" cy="100" r="${R}" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="14"/>
+                    <circle cx="100" cy="100" r="${R}" fill="none" stroke="${p.clr}" stroke-width="14"
+                            stroke-dasharray="${CIRC}" stroke-dashoffset="${off}" stroke-linecap="round"
+                            style="transition:stroke-dashoffset .9s linear,stroke .4s"/>
+                </svg>
+                <div class="absolute flex flex-col items-center">
+                    <span style="font-size:3rem;line-height:1.1">${p.e}</span>
+                    <span class="text-white font-black" style="font-size:2.8rem;font-variant-numeric:tabular-nums;line-height:1">${fmt(remaining)}</span>
+                </div>
+            </div>
+            <p class="text-white font-black mb-6" style="font-size:1.8rem">${p.msg}</p>
+            <div class="flex gap-3 justify-center">
+                <button id="pmPause" class="text-white font-black text-lg px-6 py-3 rounded-2xl" style="background:rgba(255,255,255,.2)">${paused ? "▶ Старт" : "⏸ Пауза"}</button>
+                <button id="pmStop"  class="text-white font-black text-lg px-6 py-3 rounded-2xl" style="background:rgba(255,255,255,.2)">✖ Стоп</button>
+            </div>
+        </div>`;
+        modal.querySelector("#pmPause").onclick = () => {
+            paused = !paused;
+            if (paused) { clearInterval(iv); iv = null; } else { tick(); }
+            draw();
+        };
+        modal.querySelector("#pmStop").onclick = () => { clearInterval(iv); modal.remove(); };
+    }
+
+    function done() {
+        clearInterval(iv);
+        const isFrog  = task.id === getFrogId(user);
+        const bonus   = (user === "Миша" && isFrog) ? pts : 0;
+        const isMisha = user === "Миша";
+        modal.innerHTML = `
+        <div class="text-center">
+            <div style="font-size:5.5rem;margin-bottom:.3rem">${isFrog ? "🐸" : "🎉"}</div>
+            <p class="text-white font-black mb-1" style="font-size:2.8rem">${isFrog ? "ЛЯГУШКА СЪЕДЕНА!" : "ГОТОВО!"}</p>
+            <p class="font-black mb-8" style="font-size:2rem;color:#fde047">
+                ${isMisha
+                    ? `+${pts + bonus} ⭐${isFrog ? " (x2 за лягушку!)" : ""}`
+                    : `${task.time} мин — выполнено! 💪`}
+            </p>
+            <button id="pmDone" class="font-black text-yellow-900 text-xl px-10 py-4 rounded-2xl" style="background:#fde047">
+                ${isMisha ? "Забрать звёзды!" : "Ура! 🎊"}
+            </button>
+        </div>`;
+        showConfetti();
+        modal.querySelector("#pmDone").onclick = () => {
+            const t = state.tasks.find(x => x.id === task.id);
+            if (t && !t.done) {
+                t.done = true;
+                if (isMisha) {
+                    state.mishaPoints += pts + bonus;
+                    state.logsMisha.push({ date:new Date().toISOString(), reason:`🍅 ${t.name}`, pts: pts + bonus });
+                }
+                saveState();
+            }
+            modal.remove();
+            render();
+        };
+    }
+
+    function tick() {
+        iv = setInterval(() => {
+            if (paused) return;
+            remaining--;
+            if (remaining <= 0) { remaining = 0; draw(); done(); }
+            else draw();
+        }, 1000);
+    }
+
+    draw();
+    tick();
+}
+
+// ─────────────────── РЕНДЕР: статистика (модалка) ───────────────────
+function renderStatsModal() {
+    const stats = calcStats(state.tasks);
+    const allAvg = (Object.values(stats).reduce((s,v)=>s+v.avg,0) / MEMBERS.length).toFixed(2);
+    let rows = MEMBERS.map(m => {
+        const s = stats[m];
+        const taskList = s.tasks.map(t =>
+            `<span class="inline-block bg-gray-100 rounded px-1 mr-1 text-xs">${t.name} <b style="color:${prefColor(t.prefs[m]||1)}">${t.prefs[m]||1}</b></span>`
+        ).join("");
+        return `
+        <tr class="border-b">
+            <td class="py-2 font-semibold">${m}</td>
+            <td class="py-2 text-center">${s.count}</td>
+            <td class="py-2 text-center font-bold" style="color:${prefColor(s.avg)}">${s.avg}</td>
+            <td class="py-2 text-sm">${taskList}</td>
+        </tr>`;
+    }).join("");
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-auto p-4";
+    modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-3xl mt-8">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold">📊 Статистика распределения</h3>
+            <button id="closeStats" class="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+        </div>
+        <p class="text-sm text-gray-500 mb-3">Среднее по семье: <b>${allAvg}</b> — цель: у всех одинаково</p>
+        ${renderStats(state.tasks)}
+        <table class="w-full text-sm">
+            <thead><tr class="bg-gray-50 text-gray-600">
+                <th class="py-2 text-left">Участник</th>
+                <th class="py-2">Задач</th>
+                <th class="py-2">Среднее</th>
+                <th class="py-2 text-left">Задачи</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+        <button id="closeStats2" class="mt-4 bg-amber-600 text-white px-4 py-2 rounded-xl">Закрыть</button>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector("#closeStats").onclick  = () => modal.remove();
+    modal.querySelector("#closeStats2").onclick = () => modal.remove();
+    modal.addEventListener("click", e => { if(e.target===modal) modal.remove(); });
+}
+
+// ─────────────────── ДЫШИЛКА ───────────────────
+function showHardModal(task) {
+    let tipIdx = Math.floor(Math.random() * HARD_TIPS.length);
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4";
+    modal.innerHTML = `
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm">
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <p class="text-xs text-gray-400 font-semibold uppercase tracking-wide">Сложно начать?</p>
+                ${task ? `<p class="text-sm text-gray-500 mt-0.5 font-medium">«${task.name}»</p>` : ""}
+            </div>
+            <button id="closeHard" class="text-gray-300 hover:text-gray-500 text-2xl leading-none ml-3 flex-shrink-0">×</button>
+        </div>
+        <div id="hardTipArea"></div>
+        <div class="flex gap-2 mt-4">
+            <button id="nextTip"     class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl text-sm font-bold">🎲 Другой совет</button>
+            <button id="startAnyway" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold">💪 Начинаю!</button>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
+
+    function renderTip() {
+        const tip = HARD_TIPS[tipIdx];
+        modal.querySelector("#hardTipArea").innerHTML = `
+        <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 mb-2 text-center">
+            <div style="font-size:3rem;line-height:1.2;margin-bottom:.4rem">${tip.icon}</div>
+            <p class="font-black text-gray-800 text-lg mb-2">${tip.title}</p>
+            <p class="text-gray-600 text-sm leading-relaxed">${tip.text}</p>
+        </div>
+        <button class="tipActionBtn w-full bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold py-2.5 rounded-xl text-sm border border-amber-200">
+            ${tip.action} →
+        </button>`;
+        modal.querySelector(".tipActionBtn").onclick = function() {
+            this.innerHTML = "✓ Сделано! Теперь — вперёд!";
+            this.className = "tipActionBtn w-full bg-green-50 text-green-700 font-bold py-2.5 rounded-xl text-sm border border-green-200";
+        };
+    }
+
+    renderTip();
+
+    modal.querySelector("#nextTip").onclick = () => {
+        let next;
+        do { next = Math.floor(Math.random() * HARD_TIPS.length); } while (next === tipIdx && HARD_TIPS.length > 1);
+        tipIdx = next;
+        renderTip();
+    };
+    modal.querySelector("#startAnyway").onclick = () => modal.remove();
+    modal.querySelector("#closeHard").onclick    = () => modal.remove();
+    modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+}
+
+// ─────────────────── КЛЮЧ НЕДЕЛИ ───────────────────
+function getWeekKey() {
+    const d   = new Date();
+    const jan = new Date(d.getFullYear(), 0, 1);
+    const week = Math.ceil(((d - jan) / 86400000 + jan.getDay() + 1) / 7);
+    return `${d.getFullYear()}-W${week}`;
+}
+
+// ─────────────────── ЛЯГУШКА: хелперы ───────────────────
+function getFrogId(user)       { return (state.frogTaskIds || {})[user] || null; }
+function setFrogId(user, id)   {
+    if (!state.frogTaskIds) state.frogTaskIds = {};
+    state.frogTaskIds[user] = id;
+    if (user === "Миша") state.mishaFrogTaskId = id; // backward compat
+}
+
+// ─────────────────── ПОРЯДОК ЗАДАЧ: хелперы ───────────────────
+function ensureTaskOrder(user, tasks) {
+    if (!state.taskOrder) state.taskOrder = {};
+    const cur     = state.taskOrder[user] || [];
+    const ids     = tasks.map(t => t.id);
+    const newIds  = ids.filter(id => !cur.includes(id));
+    const cleaned = cur.filter(id => ids.includes(id));
+    if (newIds.length || cleaned.length !== cur.length) {
+        state.taskOrder[user] = [...cleaned, ...newIds];
+        saveState();
+    }
+}
+function getSortedUserTasks(tasks, user) {
+    const order = (state.taskOrder || {})[user];
+    if (!order || !order.length) return tasks;
+    return [...tasks].sort((a, b) => {
+        const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+        if (ia === -1 && ib === -1) return 0;
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+    });
+}
+function moveTaskOrder(user, taskId, dir) {   // dir: -1 вверх, +1 вниз
+    if (!state.taskOrder) state.taskOrder = {};
+    const order = state.taskOrder[user] || [];
+    const idx   = order.indexOf(taskId);
+    if (idx === -1) return;
+    const swap  = idx + dir;
+    if (swap < 0 || swap >= order.length) return;
+    [order[idx], order[swap]] = [order[swap], order[idx]];
+    state.taskOrder[user] = order;
+    saveState();
+    render();
+}
+
+// ─────────────────── ТОСТ «СЕМЕЙНЫЙ ВКЛАД» ───────────────────
+function showContributionToast(task, user) {
+    const famDone  = state.tasks.filter(t => t.done).length;
+    const famTotal = state.tasks.length;
+    const famPct   = famTotal ? Math.round(famDone / famTotal * 100) : 0;
+
+    const msgs = [
+        `💪 ${task.time} мин — вклад в семью!`,
+        `🏠 Ты взял на себя ${task.time} мин. Семья ценит!`,
+        `✨ Сделано! Семья уже на ${famPct}%`,
+    ];
+    const msg = msgs[famDone % msgs.length];
+
+    const toast = document.createElement("div");
+    toast.className = "fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-xl text-white font-bold text-sm text-center max-w-xs pointer-events-none";
+    toast.style.background = "linear-gradient(135deg,#10b981,#059669)";
+    toast.innerHTML = `${msg}<br><span class="font-normal text-xs opacity-80">Семья: ${famDone}/${famTotal} задач (${famPct}%)</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.transition = "opacity .5s";
+        toast.style.opacity    = "0";
+        setTimeout(() => toast.remove(), 500);
+    }, 2400);
+}
+
+// ─────────────────── МОДАЛКА НАГРАДЫ (100%) + АРТЕФАКТ ───────────────────
+function showRewardModal() {
+    const streak  = state.sprintStreak || 0;
+    const rewards = ["🍿 Фильм всей семьёй", "🍦 Мороженое", "🌲 Прогулка на природу", "🎮 Игры вместе"];
+    const today   = new Date().toLocaleDateString("ru-RU", {day:"numeric", month:"long", year:"numeric"});
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center z-50 p-4 overflow-auto";
+    modal.innerHTML = `
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center my-auto">
+        <div style="font-size:4rem;line-height:1.1">🏆</div>
+        <h2 class="text-2xl font-black text-amber-800 mt-2 mb-1">Спринт 100%!</h2>
+        ${streak > 1 ? `<p class="text-orange-500 font-bold mb-2">🔥 Серия: ${streak} спринтов подряд!</p>` : ""}
+        <p class="text-gray-500 text-sm mb-4">Вся семья справилась — выберите награду вместе!</p>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            ${rewards.map((r,i) => `
+                <button class="rewardChoice border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 rounded-2xl py-4 text-sm font-bold transition-all" data-idx="${i}">${r}</button>
+            `).join("")}
+        </div>
+        <div id="rewardConfirmMsg" class="text-green-700 font-bold text-sm mb-4 min-h-[1.5rem]"></div>
+
+        <!-- Артефакт для шаринга -->
+        <div class="border-t border-gray-100 pt-4 mb-4 text-left">
+            <p class="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-3 text-center">Поделиться достижением</p>
+            <div id="shareCard" class="rounded-2xl p-4 mb-3" style="background:linear-gradient(135deg,#7c3aed 0%,#db2777 100%);color:white">
+                <div class="flex items-center gap-2 mb-2">
+                    <span style="font-size:2rem;line-height:1">🏠</span>
+                    <div>
+                        <p class="font-black text-base leading-tight">Семья Б-27</p>
+                        <p style="color:rgba(255,255,255,.65);font-size:.75rem">Семейный спринт</p>
+                    </div>
+                    <span style="font-size:1.6rem;line-height:1;margin-left:auto">🎉</span>
+                </div>
+                <p class="font-black text-xl mb-1">100% выполнено!</p>
+                ${streak > 1 ? `<p style="color:rgba(255,255,255,.9);font-size:.85rem">🔥 Серия: ${streak} недели подряд</p>` : ""}
+                <p style="color:rgba(255,255,255,.5);font-size:.7rem;margin-top:.4rem">${today}</p>
+            </div>
+            <div class="flex gap-2">
+                <button id="copyAchieve"  class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold py-2.5 rounded-xl">📋 Текст</button>
+                <button id="shareVK"      class="flex-1 text-white text-xs font-bold py-2.5 rounded-xl" style="background:#4a76a8">📤 ВКонтакте</button>
+                <button id="downloadCard" class="flex-1 bg-violet-100 hover:bg-violet-200 text-violet-700 text-xs font-bold py-2.5 rounded-xl">📥 Картинка</button>
+            </div>
+        </div>
+
+        <button id="closeReward" class="w-full bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">Закрыть</button>
+    </div>`;
+    document.body.appendChild(modal);
+
+    modal.querySelectorAll(".rewardChoice").forEach(btn => {
+        btn.onclick = () => {
+            modal.querySelectorAll(".rewardChoice").forEach(b => {
+                b.classList.remove("border-amber-500","bg-amber-100","scale-105");
+                b.classList.add("border-gray-200");
+            });
+            btn.classList.remove("border-gray-200");
+            btn.classList.add("border-amber-500","bg-amber-100","scale-105");
+            modal.querySelector("#rewardConfirmMsg").textContent = `Выбрано: ${btn.textContent}! 🎊`;
+        };
+    });
+
+    modal.querySelector("#copyAchieve").onclick = () => {
+        const txt = `🏆 Семья Б-27 выполнила семейный спринт на 100%!${streak>1?` 🔥 Серия: ${streak} недели подряд!`:""} — ${today}`;
+        navigator.clipboard.writeText(txt).then(() => {
+            const b = modal.querySelector("#copyAchieve");
+            b.textContent = "✓ Скопировано!";
+            setTimeout(() => { if(b && b.isConnected) b.textContent = "📋 Текст"; }, 2000);
+        }).catch(() => alert("Скопируй вручную:\n" + txt));
+    };
+
+    modal.querySelector("#shareVK").onclick = () => {
+        const msg = encodeURIComponent(`🏆 Семья Б-27 выполнила семейный спринт на 100%!${streak>1?` 🔥 Серия: ${streak} недели подряд!`:""}`);
+        window.open(`https://vk.com/share.php?title=${msg}`, "_blank");
+    };
+
+    modal.querySelector("#downloadCard").onclick = () => generateAchievementCard(streak, today);
+
+    modal.querySelector("#closeReward").onclick = () => modal.remove();
+    modal.addEventListener("click", e => { if(e.target === modal) modal.remove(); });
+}
+
+function generateAchievementCard(streak, today) {
+    const W = 600, H = 320;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // Фон градиент
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "#7c3aed");
+    grad.addColorStop(1, "#db2777");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(0, 0, W, H, 24) : ctx.rect(0, 0, W, H);
+    ctx.fill();
+
+    // Полупрозрачная полоса снизу
+    ctx.fillStyle = "rgba(0,0,0,.15)";
+    ctx.fillRect(0, H - 60, W, 60);
+
+    // Эмодзи
+    ctx.font = "56px serif";
+    ctx.fillText("🏠", 36, 90);
+    ctx.fillText("🎉", W - 90, 90);
+
+    // Подзаголовок
+    ctx.fillStyle = "rgba(255,255,255,.65)";
+    ctx.font = "600 18px system-ui,sans-serif";
+    ctx.fillText("Семья Б-27 · Семейный спринт", 36, 145);
+
+    // Главный текст
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 52px system-ui,sans-serif";
+    ctx.fillText("100% выполнено!", 36, 210);
+
+    // Серия
+    if (streak > 1) {
+        ctx.fillStyle = "#fde047";
+        ctx.font = "bold 24px system-ui,sans-serif";
+        ctx.fillText(`🔥 Серия: ${streak} недели подряд`, 36, 254);
+    }
+
+    // Дата
+    ctx.fillStyle = "rgba(255,255,255,.45)";
+    ctx.font = "16px system-ui,sans-serif";
+    ctx.fillText(today, 36, H - 20);
+
+    // Скачать
+    const a = document.createElement("a");
+    a.download = `b27-sprint-100-${Date.now()}.png`;
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+}
+
+// ─────────────────── 🐘 МОДАЛКА СЛОН: декомпозиция ───────────────────
+function showElephantModal(task) {
+    const steps = elephantStepsFor(task);
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center z-50 p-4 overflow-auto";
+    modal.innerHTML = `
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm mt-8 mb-8">
+        <div class="flex justify-between items-start mb-2">
+            <div>
+                <h3 class="text-xl font-black text-gray-800">🐘 Разбить на кусочки</h3>
+                <p class="text-xs text-gray-400 mt-0.5">Каждый кусочек — 2–10 минут («дыры в сыре»)</p>
+            </div>
+            <button id="closeElephant" class="text-gray-300 hover:text-gray-500 text-2xl leading-none ml-3 flex-shrink-0">×</button>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">«${task.name}» — выбери шаги, которые хочешь добавить:</p>
+        <div class="space-y-2 mb-5" id="elephantStepsList">
+            ${steps.map((s,i) => `
+            <label class="flex items-start gap-3 p-3 border-2 border-gray-100 rounded-xl hover:border-amber-300 cursor-pointer transition-all has-[:checked]:border-amber-400 has-[:checked]:bg-amber-50">
+                <input type="checkbox" class="elephantCheck w-4 h-4 mt-0.5 flex-shrink-0 accent-amber-500" data-idx="${i}" checked>
+                <div class="flex-1">
+                    <p class="text-sm font-medium text-gray-800">${s.name}</p>
+                    <p class="text-xs text-gray-400 mt-0.5">~${s.time} мин</p>
+                </div>
+            </label>`).join("")}
+        </div>
+        <div class="flex gap-3">
+            <button id="confirmElephant" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">🐘 Добавить шаги</button>
+            <button id="cancelElephant"  class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl">Отмена</button>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
+
+    modal.querySelector("#confirmElephant").onclick = () => {
+        const checked = [...modal.querySelectorAll(".elephantCheck:checked")]
+            .map(cb => steps[+cb.dataset.idx]);
+        if (!checked.length) { modal.remove(); return; }
+        if (!task.customSubtasks) task.customSubtasks = [];
+        checked.forEach(s => {
+            task.customSubtasks.push({
+                id: `sub_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+                name: s.name,
+                done: false
+            });
+        });
+        saveState(); render(); modal.remove();
+    };
+    modal.querySelector("#cancelElephant").onclick  = () => modal.remove();
+    modal.querySelector("#closeElephant").onclick   = () => modal.remove();
+    modal.addEventListener("click", e => { if(e.target === modal) modal.remove(); });
+}
+
+// ─────────────────── МОДАЛКА ДОБАВИТЬ ЗАДАЧУ ───────────────────
+function showAddTaskModal() {
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 overflow-auto p-4";
+    modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mt-8 mb-8">
+        <div class="flex justify-between items-center mb-5">
+            <h3 class="text-xl font-bold text-amber-800">➕ Новая задача</h3>
+            <button id="closeAddTask" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+        </div>
+        <div class="space-y-4">
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Название *</label>
+                <input id="newTaskName" type="text" placeholder="Например: Помыть окна" class="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            </div>
+
+            <div class="flex gap-3">
+                <div class="flex-1">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Время (мин)</label>
+                    <input id="newTaskTime" type="number" value="15" min="1" max="240" class="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                </div>
+                <div class="flex-1">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Периодичность</label>
+                    <select id="newTaskFreq" class="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                        <option value="once">🗓 Разово</option>
+                        <option value="weekly">Каждую неделю</option>
+                        <option value="biweekly">Раз в 2 недели</option>
+                        <option value="monthly">Раз в месяц</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- БЛОК: разово — конкретный исполнитель -->
+            <div id="blockAssignee">
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Исполнитель</label>
+                <div class="grid grid-cols-2 gap-2">
+                    ${MEMBERS.map((m, i) => `
+                        <label class="flex items-center gap-2 border-2 rounded-xl px-3 py-2 cursor-pointer transition-all hover:border-amber-400 has-[:checked]:border-amber-500 has-[:checked]:bg-amber-50">
+                            <input type="radio" name="newTaskAssignee" value="${m}" class="w-4 h-4 accent-amber-500" ${i===0?"checked":""}>
+                            <span class="text-sm font-medium">${m}</span>
+                        </label>`).join("")}
+                </div>
+            </div>
+
+            <!-- БЛОК: повторяющаяся — группа + тип -->
+            <div id="blockRecurring" style="display:none" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Кто может выполнять</label>
+                    <div class="flex gap-3 flex-wrap">
+                        ${MEMBERS.map(m => `
+                            <label class="flex items-center gap-1 cursor-pointer select-none">
+                                <input type="checkbox" class="newTaskWho w-4 h-4" value="${m}" checked>
+                                <span class="text-sm">${m}</span>
+                            </label>`).join("")}
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Тип распределения</label>
+                    <select id="newTaskType" class="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                        <option value="shared">Распределяемая — кто-то один</option>
+                        <option value="personal">Личная — каждый делает своё</option>
+                        <option value="adhd">Задача Миши (короткие шаги)</option>
+                        <option value="mom_primary">Задача Мамы</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Заметка (необязательно)</label>
+                <input id="newTaskNote" type="text" placeholder="Уточнение или комментарий" class="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+            <button id="confirmAddTask" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white px-4 py-3 rounded-xl font-bold">Добавить задачу</button>
+            <button id="cancelAddTask"  class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-xl">Отмена</button>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    modal.querySelector("#closeAddTask").onclick = close;
+    modal.querySelector("#cancelAddTask").onclick = close;
+    modal.addEventListener("click", e => { if(e.target === modal) close(); });
+
+    // Переключение блоков при смене периодичности
+    modal.querySelector("#newTaskFreq").onchange = e => {
+        const isOnce = e.target.value === "once";
+        modal.querySelector("#blockAssignee").style.display  = isOnce ? "block" : "none";
+        modal.querySelector("#blockRecurring").style.display = isOnce ? "none"  : "block";
+    };
+
+    modal.querySelector("#confirmAddTask").onclick = () => {
+        const nameEl = modal.querySelector("#newTaskName");
+        const name   = nameEl.value.trim();
+        if (!name) { nameEl.focus(); nameEl.classList.add("border-red-400"); return; }
+
+        const time = parseInt(modal.querySelector("#newTaskTime").value) || 15;
+        const freq = modal.querySelector("#newTaskFreq").value;
+        const note = modal.querySelector("#newTaskNote").value.trim() || undefined;
+
+        let type, who;
+        if (freq === "once") {
+            // Конкретный исполнитель — задача уходит ему напрямую
+            const assignee = modal.querySelector("input[name='newTaskAssignee']:checked")?.value || MEMBERS[0];
+            type = "shared";          // shared с одним в who → всегда ему
+            who  = [assignee];
+        } else {
+            type = modal.querySelector("#newTaskType").value;
+            who  = [...modal.querySelectorAll(".newTaskWho:checked")].map(c => c.value);
+            if (!who.length) { alert("Выбери хотя бы одного участника"); return; }
+        }
+
+        const newTask = {
+            id: "custom_" + Date.now(),
+            name, type, category: "Свои задачи", freq, time, who, note,
+            isCustom: true,
+            prefs: Object.fromEntries(MEMBERS.map(m => [m, who.includes(m) ? 8 : 2])),
+        };
+        if (!state.customTasks) state.customTasks = [];
+        state.customTasks.push(newTask);
+        state.allTasksPool.push(JSON.parse(JSON.stringify(newTask)));
+        state.selectedSprintTaskIds.add(newTask.id);
+        saveState();
+        close();
+        render();
+
+        const toast = document.createElement("div");
+        toast.className = "fixed bottom-6 left-1/2 -translate-x-1/2 bg-green-600 text-white text-sm px-5 py-2.5 rounded-xl z-50 shadow-lg font-semibold";
+        toast.textContent = freq === "once"
+            ? `✅ «${name}» → ${who[0]}`
+            : `✅ «${name}» добавлено`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2500);
+    };
+}
+
+// ─────────────────── КОНФЕТТИ ───────────────────
+function showConfetti() {
+    for (let i=0; i<120; i++) {
+        const c = document.createElement("div");
+        c.className = "confetti-piece";
+        c.style.left = Math.random() * window.innerWidth + "px";
+        c.style.top  = "-10px";
+        c.style.backgroundColor = `hsl(${Math.random()*360},70%,60%)`;
+        document.body.appendChild(c);
+        setTimeout(()=>c.remove(), 2200);
+    }
+}
+
+// ─────────────────── СОБЫТИЯ ───────────────────
+function attachEvents() {
+    // --- Admin: выбор задач ---
+    document.querySelectorAll(".task-checkbox").forEach(cb => {
+        cb.onchange = () => {
+            if (cb.checked) state.selectedSprintTaskIds.add(cb.dataset.id);
+            else            state.selectedSprintTaskIds.delete(cb.dataset.id);
+            saveState(); render();
+        };
+    });
+
+    const presetEasy = document.getElementById("presetEasy");
+    if (presetEasy) presetEasy.onclick = () => {
+        // Лёгкий: только личные (каждый за себя) + СДВГ-задачи Миши
+        state.selectedSprintTaskIds = new Set(
+            state.allTasksPool.filter(t => t.type === "personal" || t.type === "adhd").map(t => t.id)
+        );
+        saveState(); render();
+    };
+    const presetNormal = document.getElementById("presetNormal");
+    if (presetNormal) presetNormal.onclick = () => {
+        // Обычный: все еженедельные задачи + текущая ротация двухнедельных
+        const biIds = currentBiweeklyIds();
+        state.selectedSprintTaskIds = new Set(
+            state.allTasksPool.filter(t => {
+                if (t.freq === "monthly")  return false;
+                if (t.freq === "biweekly") return biIds.includes(t.id);
+                return true; // все weekly любого типа
+            }).map(t => t.id)
+        );
+        saveState(); render();
+    };
+    const presetFull = document.getElementById("presetFull");
+    if (presetFull) presetFull.onclick = () => {
+        // Генеральная: все задачи из базы
+        state.selectedSprintTaskIds = new Set(state.allTasksPool.map(t => t.id));
+        saveState(); render();
+    };
+
+    const distBtn = document.getElementById("distributeBtn");
+    if (distBtn) distBtn.onclick = () => {
+        if (state.selectedSprintTaskIds.size === 0) return;
+        const sel = state.allTasksPool.filter(t => state.selectedSprintTaskIds.has(t.id));
+        state.tasks  = assignBalanced(sel);
+        state.stage  = "execution";
+        saveState(); render();
+    };
+
+    // --- Execution ---
+    const switcher = document.getElementById("userSwitcher");
+    if (switcher) switcher.onchange = e => {
+        state.currentUser = e.target.value; saveState(); render();
+    };
+    const resetBtn = document.getElementById("resetSprintBtn");
+    if (resetBtn) resetBtn.onclick = () => {
+        state.stage = "sprint_selection";
+        state.currentUser = "Администратор";
+        saveState(); render();
+    };
+    const showStats = document.getElementById("showStats");
+    if (showStats) showStats.onclick = () => renderStatsModal();
+
+    // Чекбоксы выполнения
+    document.querySelectorAll(".doneCheck").forEach(cb => {
+        cb.onchange = () => {
+            const task = state.tasks.find(t => t.id === cb.dataset.id);
+            if (!task || task.done) return;
+            task.done = true;
+            if (state.currentUser === "Миша") {
+                state.mishaPoints += task.time * 2;
+                state.logsMisha.push({ date:new Date().toISOString(), reason:`Выполнил: ${task.name}`, pts:task.time*2 });
+            }
+            showContributionToast(task, state.currentUser);
+            saveState();
+            if (state.tasks.every(t=>t.done) && !state.last100PercentDate) {
+                state.last100PercentDate = new Date().toISOString();
+                // Обновляем серию спринтов
+                const weekKey = getWeekKey();
+                if (state.lastSprintWeek !== weekKey) {
+                    state.sprintStreak = (state.sprintStreak || 0) + 1;
+                    state.lastSprintWeek = weekKey;
+                }
+                saveState();
+                showConfetti();
+                setTimeout(() => showRewardModal(), 400);
+            }
+            render();
+        };
+    });
+
+    // Отложить на воскресенье
+    document.querySelectorAll(".deferBtn").forEach(btn => {
+        btn.onclick = () => {
+            const task = state.tasks.find(t => t.id === btn.dataset.id);
+            if (task && task.sprint === "sat") { task.sprint = "sun"; saveState(); render(); }
+        };
+    });
+
+    // Помидор — для всех участников
+    document.querySelectorAll(".timerBtn").forEach(btn => {
+        btn.onclick = () => {
+            const task = state.tasks.find(t => t.id === btn.dataset.id);
+            if (task) showPomodoroTimer(task, state.currentUser);
+        };
+    });
+
+    // Лягушка — для всех участников
+    document.querySelectorAll(".frogBtn").forEach(btn => {
+        btn.onclick = () => {
+            const id   = btn.dataset.id;
+            const user = state.currentUser;
+            setFrogId(user, getFrogId(user) === id ? null : id);
+            saveState(); render();
+        };
+    });
+
+    // Порядок задач ↑↓
+    document.querySelectorAll(".orderUpBtn").forEach(btn => {
+        btn.onclick = () => moveTaskOrder(state.currentUser, btn.dataset.id, -1);
+    });
+    document.querySelectorAll(".orderDownBtn").forEach(btn => {
+        btn.onclick = () => moveTaskOrder(state.currentUser, btn.dataset.id, +1);
+    });
+
+    // Режим администратора
+    const goAdmin = document.getElementById("goAdmin");
+    if (goAdmin) goAdmin.onclick = () => {
+        state.currentUser = "Администратор"; saveState(); render();
+    };
+    const goAdminPlan = document.getElementById("goAdminPlan");
+    if (goAdminPlan) goAdminPlan.onclick = () => {
+        state.currentUser = "Администратор"; saveState(); render();
+    };
+    const goProgress = document.getElementById("goProgress");
+    if (goProgress) goProgress.onclick = () => {
+        state.stage = "execution"; saveState(); render();
+    };
+
+    // Передать дело
+    document.querySelectorAll(".reassignBtn").forEach(btn => {
+        btn.onclick = () => showReassignModal(btn.dataset.id);
+    });
+
+    // Вернуть выполненное дело
+    document.querySelectorAll(".undoBtn").forEach(btn => {
+        btn.onclick = () => {
+            const task = state.tasks.find(t => t.id === btn.dataset.id);
+            if (!task || !task.done) return;
+            task.done = false;
+            // Откатить баллы Миши если он выполнял
+            if (task.assignee === "Миша") {
+                state.mishaPoints = Math.max(0, state.mishaPoints - task.time * 2);
+            }
+            state.last100PercentDate = null;
+            saveState(); render();
+            const toast = document.createElement("div");
+            toast.className = "fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-xl z-50 shadow-lg";
+            toast.textContent = `«${task.name}» возвращено в список`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+        };
+    });
+
+    // Дышилка
+    document.querySelectorAll(".hardBtn").forEach(btn => {
+        btn.onclick = () => {
+            const t = state.tasks.find(x => x.id === btn.dataset.id);
+            showHardModal(t || null);
+        };
+    });
+
+    // 🐘 Слон — декомпозиция задачи
+    document.querySelectorAll(".elephantBtn").forEach(btn => {
+        btn.onclick = () => {
+            const t = state.tasks.find(x => x.id === btn.dataset.id);
+            if (t) showElephantModal(t);
+        };
+    });
+
+    // ── Подзадачи ──────────────────────────────────────────
+    document.querySelectorAll(".toggleSubInput").forEach(btn => {
+        btn.onclick = () => {
+            const inp = document.getElementById(`subInput_${btn.dataset.taskId}`);
+            if (!inp) return;
+            const open = inp.style.display !== "none";
+            inp.style.display = open ? "none" : "flex";
+            if (!open) inp.querySelector("input")?.focus();
+        };
+    });
+
+    document.querySelectorAll(".confirmSubtask").forEach(btn => {
+        btn.onclick = () => {
+            const taskId = btn.dataset.taskId;
+            const input  = document.querySelector(`.newSubtaskInput[data-task-id="${taskId}"]`);
+            if (!input || !input.value.trim()) return;
+            const task = state.tasks.find(t => t.id === taskId);
+            if (!task) return;
+            if (!task.customSubtasks) task.customSubtasks = [];
+            task.customSubtasks.push({ id:`sub_${Date.now()}`, name:input.value.trim(), done:false });
+            saveState(); render();
+        };
+    });
+
+    // Enter в поле подзадачи
+    document.querySelectorAll(".newSubtaskInput").forEach(inp => {
+        inp.onkeydown = e => {
+            if (e.key !== "Enter") return;
+            const btn = document.querySelector(`.confirmSubtask[data-task-id="${inp.dataset.taskId}"]`);
+            btn?.click();
+        };
+    });
+
+    document.querySelectorAll(".subtaskCheck").forEach(cb => {
+        cb.onchange = () => {
+            const task = state.tasks.find(t => t.id === cb.dataset.taskId);
+            if (!task) return;
+            const sub = (task.customSubtasks||[]).find(s => s.id === cb.dataset.subId);
+            if (sub) { sub.done = cb.checked; saveState(); render(); }
+        };
+    });
+
+    document.querySelectorAll(".deleteSubtask").forEach(btn => {
+        btn.onclick = e => {
+            e.preventDefault();
+            const task = state.tasks.find(t => t.id === btn.dataset.taskId);
+            if (!task) return;
+            task.customSubtasks = (task.customSubtasks||[]).filter(s => s.id !== btn.dataset.subId);
+            saveState(); render();
+        };
+    });
+
+    // ── Добавить свою задачу (админ) ──────────────────────
+    const addCustomTaskBtn = document.getElementById("addCustomTaskBtn");
+    if (addCustomTaskBtn) addCustomTaskBtn.onclick = () => showAddTaskModal();
+
+    // ── Удалить свою задачу (админ) ───────────────────────
+    document.querySelectorAll(".deleteCustomTask").forEach(btn => {
+        btn.onclick = e => {
+            e.preventDefault();
+            const id = btn.dataset.id;
+            state.customTasks = (state.customTasks||[]).filter(t => t.id !== id);
+            state.allTasksPool = state.allTasksPool.filter(t => t.id !== id);
+            state.selectedSprintTaskIds.delete(id);
+            saveState(); render();
+        };
+    });
+}
+
+// ─────────────────── ЭКРАН ОЖИДАНИЯ (не-администратор, спринт не начат) ───────────────────
+function renderWaitingScreen() {
+    return `
+    <div class="flex flex-col items-center justify-center min-h-[70vh] gap-6 text-center px-4">
+        <div>
+            <div style="font-size:5rem">🧹</div>
+            <h2 class="text-2xl font-black text-amber-800 mt-2">Спринт ещё не начат</h2>
+            <p class="text-gray-500 mt-1">Попроси маму распределить задачи!</p>
+        </div>
+        <div class="flex gap-3 flex-wrap justify-center items-center">
+            ${renderUserSwitcher(state.currentUser)}
+            <button id="goAdminPlan" class="bg-red-100 text-red-700 px-4 py-2 rounded-xl font-semibold text-sm">🔧 Открыть планирование</button>
+        </div>
+    </div>`;
+}
+
+// ─────────────────── ГЛАВНЫЙ РЕНДЕР ───────────────────
+function render() {
+    const app = document.getElementById("app");
+    if (state.stage === "sprint_selection") {
+        if (state.currentUser === "Администратор") {
+            app.innerHTML = renderAdminSelection();
+        } else {
+            app.innerHTML = renderWaitingScreen();
+        }
+    } else {
+        app.innerHTML = renderExecution();
+    }
+    attachEvents();
+}
+
+loadState();
+// Авто-пресет «Обычный» если ещё ничего не выбрано
+if (state.selectedSprintTaskIds.size === 0) {
+    const _biIds = currentBiweeklyIds();
+    state.selectedSprintTaskIds = new Set(
+        state.allTasksPool.filter(t => {
+            if (t.freq === "monthly")  return false;
+            if (t.freq === "biweekly") return _biIds.includes(t.id);
+            return true;
+        }).map(t => t.id)
+    );
+}
+render();
+</script>
+</body>
+</html>
