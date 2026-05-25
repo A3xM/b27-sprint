@@ -749,6 +749,9 @@ let state = {
     lastSprintWeek: null,     // ключ недели последнего 100%
     frogTaskIds: {},          // { userName: taskId } — лягушка каждого участника
     taskOrder: {},            // { userName: [taskId,...] } — личный порядок задач
+    userCompletedDates: {},   // { userName: isoDate } — когда участник закрыл свою часть
+    pendingReward: null,      // { text, suggestedBy } — предложение ожидает одобрения
+    nextSprintReward: null,   // { text } — одобренная награда для следующего спринта
     _ts: 0                    // timestamp последнего сохранения (для синхронизации)
 };
 
@@ -885,6 +888,7 @@ function renderAdminSelection() {
                     ? `<button id="goProgress" class="flex-1 bg-white border border-red-200 text-red-700 hover:bg-red-50 font-bold px-4 py-2 rounded-xl text-sm">👥 Прогресс семьи</button>`
                     : `<span class="flex-1 text-center bg-white border border-red-100 text-red-300 font-bold px-4 py-2 rounded-xl text-sm">👥 Прогресс семьи</span>`}
                 <button id="openSyncModal" class="bg-white border border-red-200 text-red-600 hover:bg-red-50 px-3 py-2 rounded-xl text-sm font-medium" title="Синхронизация между устройствами">${getSyncStatus() ? "🔄✅" : "🔄"} Синхр.</button>
+                ${state.pendingReward ? `<button id="showPendingRewardBtn" class="bg-amber-400 text-white px-3 py-2 rounded-xl text-sm font-bold animate-pulse" title="Есть предложение награды">💡 Награда</button>` : ""}
             </div>
         </div>
 
@@ -1609,6 +1613,86 @@ function showContributionToast(task, user) {
 }
 
 // ─────────────────── МОДАЛКА НАГРАДЫ (100%) + АРТЕФАКТ ───────────────────
+// ─────────────────── 🎊 РОЛЬ ЗАВЕРШИЛА СПРИНТ ───────────────────
+function showUserCompleteModal(user) {
+    const emojis  = { Миша:"👦", Максим:"🧑", Майя:"👧", Мама:"👩" };
+    const colors  = { Миша:"blue", Максим:"purple", Майя:"pink", Мама:"amber" };
+
+    // Кто уже закончил, кто ещё нет
+    const rows = MEMBERS.map(m => {
+        const mTasks = state.tasks.filter(t => t.assignee === m);
+        if (!mTasks.length) return null;
+        const done = mTasks.every(t => t.done);
+        const left = mTasks.filter(t => !t.done).length;
+        return { m, done, left };
+    }).filter(Boolean);
+
+    const doneCount   = rows.filter(r => r.done).length;
+    const totalCount  = rows.length;
+    const allDone     = doneCount === totalCount;
+
+    const progressRows = rows.map(r => `
+        <div class="flex items-center gap-3 py-2 border-b last:border-0">
+            <span class="text-xl">${emojis[r.m] || "👤"}</span>
+            <span class="flex-1 font-medium text-sm text-gray-700">${r.m}</span>
+            ${r.done
+                ? `<span class="text-green-600 font-bold text-sm">✅ Готово!</span>`
+                : `<span class="text-gray-400 text-xs">${r.left} ${r.left===1?"дело":"дел"} ещё</span>`}
+        </div>`).join("");
+
+    const hasPending = !!state.pendingReward;
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-60 bs-wrap flex items-center justify-center z-50 p-4";
+    modal.innerHTML = `
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm bs-card">
+        <div class="text-center mb-4">
+            <div style="font-size:3.5rem;line-height:1.1">🎊</div>
+            <h2 class="text-xl font-black text-amber-800 mt-2">${emojis[user]||"👤"} ${user} — всё!</h2>
+            <p class="text-gray-500 text-sm mt-1">${allDone
+                ? "Вся семья закончила — пора выбирать награду! 🏆"
+                : `Ждём ещё ${totalCount - doneCount} ${(totalCount-doneCount)===1?"участника":"участников"} — потом выбираем награду вместе`}</p>
+        </div>
+
+        <div class="bg-gray-50 rounded-2xl px-4 py-1 mb-4 divide-y divide-gray-100">
+            ${progressRows}
+        </div>
+
+        ${!hasPending ? `
+        <div class="border border-dashed border-amber-300 rounded-2xl p-3 mb-4">
+            <p class="text-xs font-semibold text-amber-700 mb-2">💡 Предложи награду для следующего спринта</p>
+            <div class="flex gap-2">
+                <input id="rewardSuggestInput" type="text" maxlength="60" placeholder="Например: Пицца 🍕"
+                    class="flex-1 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <button id="rewardSuggestBtn" class="bg-amber-500 text-white px-3 py-2 rounded-xl text-sm font-bold shrink-0">→</button>
+            </div>
+        </div>` : `
+        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-4 text-center">
+            <p class="text-xs text-amber-700">⏳ Твоё предложение «<strong>${state.pendingReward.text}</strong>» ждёт одобрения администратора</p>
+        </div>`}
+
+        <button id="closeUserComplete" class="w-full bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">Отлично!</button>
+    </div>`;
+    document.body.appendChild(modal);
+
+    const input = modal.querySelector("#rewardSuggestInput");
+    const suggestBtn = modal.querySelector("#rewardSuggestBtn");
+    if (suggestBtn) {
+        const doSuggest = () => {
+            const text = input?.value.trim();
+            if (!text) { input?.classList.add("ring-2","ring-red-400"); input?.focus(); return; }
+            state.pendingReward = { text, suggestedBy: user };
+            saveState();
+            modal.remove();
+            showToast(`💡 Предложение «${text}» отправлено администратору!`);
+        };
+        suggestBtn.onclick = doSuggest;
+        input?.addEventListener("keydown", e => { if (e.key === "Enter") doSuggest(); });
+    }
+    modal.querySelector("#closeUserComplete").onclick = () => modal.remove();
+    modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+}
+
 // ─────────────────── 🎉 СУББОТА ЗАВЕРШЕНА ───────────────────
 function showSaturdayCompleteModal() {
     const satDone  = state.tasks.filter(t => t.sprint === "sat").length;
@@ -1652,8 +1736,39 @@ function showSaturdayCompleteModal() {
 
 function showRewardModal() {
     const streak  = state.sprintStreak || 0;
-    const rewards = ["🍿 Фильм всей семьёй", "🍦 Мороженое", "🌲 Прогулка на природу", "🎮 Игры вместе"];
     const today   = new Date().toLocaleDateString("ru-RU", {day:"numeric", month:"long", year:"numeric"});
+    const isAdmin = state.currentUser === "Администратор";
+
+    // Базовые варианты + предодобренная награда первой
+    const baseRewards = ["🍿 Фильм всей семьёй", "🍦 Мороженое", "🌲 Прогулка на природу", "🎮 Игры вместе"];
+    const nextReward  = state.nextSprintReward;
+    const rewards     = nextReward
+        ? [nextReward.text, ...baseRewards.filter(r => r !== nextReward.text)]
+        : baseRewards;
+
+    const rewardBtns = rewards.map((r, i) => {
+        const isPreset = nextReward && i === 0;
+        return `<button class="rewardChoice border-2 rounded-2xl py-3 px-2 text-sm font-bold transition-all ${
+            isPreset
+                ? "border-amber-400 bg-amber-50 col-span-2 text-amber-800"
+                : "border-gray-200 hover:border-amber-400 hover:bg-amber-50"
+        }" data-idx="${i}">
+            ${isPreset ? `<span class="text-xs font-normal text-amber-500 block mb-0.5">⭐ Выбор семьи</span>` : ""}
+            ${r}
+        </button>`;
+    }).join("");
+
+    // Блок одобрения предложения (для всех — видит кто открыл)
+    const pendingBlock = state.pendingReward ? `
+        <div class="border-2 border-amber-300 bg-amber-50 rounded-2xl p-4 mb-4 text-left">
+            <p class="text-xs font-bold text-amber-700 mb-1">💡 ${state.pendingReward.suggestedBy} предлагает награду:</p>
+            <p class="font-black text-amber-900 text-base mb-3">«${state.pendingReward.text}»</p>
+            ${isAdmin ? `
+            <div class="flex gap-2">
+                <button id="approveReward"  class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-xl font-bold text-sm">✅ Одобрить</button>
+                <button id="rejectReward"   class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 py-2 rounded-xl text-sm">✗ Отклонить</button>
+            </div>` : `<p class="text-xs text-amber-600">Ждём одобрения администратора…</p>`}
+        </div>` : "";
 
     const modal = document.createElement("div");
     modal.className = "fixed inset-0 bg-black bg-opacity-70 bs-wrap flex items-start justify-center z-50 p-4 overflow-auto";
@@ -1663,10 +1778,11 @@ function showRewardModal() {
         <h2 class="text-2xl font-black text-amber-800 mt-2 mb-1">Спринт 100%!</h2>
         ${streak > 1 ? `<p class="text-orange-500 font-bold mb-2">🔥 Серия: ${streak} спринтов подряд!</p>` : ""}
         <p class="text-gray-500 text-sm mb-4">Вся семья справилась — выберите награду вместе!</p>
+
+        ${pendingBlock}
+
         <div class="grid grid-cols-2 gap-3 mb-3">
-            ${rewards.map((r,i) => `
-                <button class="rewardChoice border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 rounded-2xl py-4 text-sm font-bold transition-all" data-idx="${i}">${r}</button>
-            `).join("")}
+            ${rewardBtns}
         </div>
         <div id="rewardConfirmMsg" class="text-green-700 font-bold text-sm mb-4 min-h-[1.5rem]"></div>
 
@@ -1697,6 +1813,19 @@ function showRewardModal() {
     </div>`;
     document.body.appendChild(modal);
 
+    // Снимаем пометку «выбор следующего спринта» после открытия
+    if (nextReward) { state.nextSprintReward = null; saveState(); }
+
+    // Авто-выбор первой кнопки если это предодобренная награда
+    if (nextReward) {
+        const first = modal.querySelector(".rewardChoice");
+        if (first) {
+            first.classList.remove("border-gray-200");
+            first.classList.add("border-amber-500","bg-amber-100");
+            modal.querySelector("#rewardConfirmMsg").textContent = `Выбрано: ${rewards[0]}! 🎊`;
+        }
+    }
+
     modal.querySelectorAll(".rewardChoice").forEach(btn => {
         btn.onclick = () => {
             modal.querySelectorAll(".rewardChoice").forEach(b => {
@@ -1705,8 +1834,26 @@ function showRewardModal() {
             });
             btn.classList.remove("border-gray-200");
             btn.classList.add("border-amber-500","bg-amber-100","scale-105");
-            modal.querySelector("#rewardConfirmMsg").textContent = `Выбрано: ${btn.textContent}! 🎊`;
+            modal.querySelector("#rewardConfirmMsg").textContent = `Выбрано: ${btn.textContent.trim()}! 🎊`;
         };
+    });
+
+    // Одобрение / отклонение предложения
+    modal.querySelector("#approveReward")?.addEventListener("click", () => {
+        const txt = state.pendingReward?.text;
+        if (!txt) return;
+        state.nextSprintReward = { text: txt, approvedBy: "Администратор" };
+        state.pendingReward    = null;
+        saveState();
+        modal.remove();
+        showToast(`✅ Награда «${txt}» одобрена — будет в следующем спринте!`);
+    });
+    modal.querySelector("#rejectReward")?.addEventListener("click", () => {
+        const txt = state.pendingReward?.text;
+        state.pendingReward = null;
+        saveState();
+        modal.remove();
+        showToast(`✗ Предложение «${txt}» отклонено`);
     });
 
     modal.querySelector("#copyAchieve").onclick = () => {
@@ -2056,6 +2203,9 @@ function attachEvents() {
     if (resetBtn) resetBtn.onclick = () => {
         state.stage = "sprint_selection";
         state.currentUser = "Администратор";
+        state.last100PercentDate = null;
+        state.lastSat100Date     = null;
+        state.userCompletedDates = {};
         saveState(); render();
     };
     const showStats = document.getElementById("showStats");
@@ -2073,6 +2223,22 @@ function attachEvents() {
             }
             showContributionToast(task, state.currentUser);
             saveState();
+
+            // Проверка: текущий участник закончил свою часть?
+            const cu = state.currentUser;
+            if (cu !== "Администратор") {
+                const myAll = state.tasks.filter(t => t.assignee === cu);
+                const myAllDone = myAll.length > 0 && myAll.every(t => t.done);
+                if (myAllDone && !state.userCompletedDates?.[cu] && !state.tasks.every(t=>t.done)) {
+                    if (!state.userCompletedDates) state.userCompletedDates = {};
+                    state.userCompletedDates[cu] = new Date().toISOString();
+                    saveState();
+                    showConfetti();
+                    setTimeout(() => showUserCompleteModal(cu), 400);
+                    render();
+                    return; // не запускаем субботний / общий триггер одновременно
+                }
+            }
 
             // Проверка: все субботние задачи выполнены?
             const satTasks = state.tasks.filter(t => t.sprint === "sat");
@@ -2143,6 +2309,10 @@ function attachEvents() {
     document.querySelectorAll("#openSyncModal").forEach(btn => {
         btn.onclick = () => showSyncModal();
     });
+
+    // 💡 Ожидающая награда (кнопка у администратора)
+    const pendingRewardBtn = document.getElementById("showPendingRewardBtn");
+    if (pendingRewardBtn) pendingRewardBtn.onclick = () => showRewardModal();
 
     // Помидор — для всех участников
     document.querySelectorAll(".timerBtn").forEach(btn => {
