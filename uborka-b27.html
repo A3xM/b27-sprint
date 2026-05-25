@@ -1153,19 +1153,29 @@ function renderExecution() {
             if (!satPhase || !hasSunTasks) return "";
             const mySun = myTasks.filter(t => t.sprint === "sun");
             if (!mySun.length) return "";
-            const sunMin = mySun.reduce((s,t) => s+t.time, 0);
+            const sunDoneEarly = mySun.filter(t => t.done);
+            const sunPending   = mySun.filter(t => !t.done);
+            const sunMin = sunPending.reduce((s,t) => s+t.time, 0);
             return `
-        <details class="opacity-60">
+        <details>
             <summary class="cursor-pointer select-none">
-                <span class="text-sm font-semibold text-purple-600">📦 Воскресенье — превью (${mySun.length} дел, ~${sunMin} мин)</span>
-                <span class="text-xs text-gray-400 ml-1">· откроется после субботы</span>
+                <span class="text-sm font-semibold text-purple-600">📦 Воскресенье — заранее (${sunPending.length} дел${sunMin ? ", ~"+sunMin+" мин" : ""})</span>
+                ${sunDoneEarly.length ? `<span class="text-xs text-green-600 ml-1">· ${sunDoneEarly.length} уже сделано ✅</span>` : `<span class="text-xs text-gray-400 ml-1">· можно сделать сейчас</span>`}
             </summary>
-            <div class="mt-2 space-y-1 pointer-events-none select-none">
-                ${mySun.map(t => `
+            <div class="mt-2 space-y-1">
+                ${sunPending.map(t => `
                 <div class="flex items-center gap-2 border rounded-xl px-3 py-2 bg-purple-50 border-purple-100">
-                    <span class="w-3.5 h-3.5 rounded border-2 border-purple-200 shrink-0 inline-block"></span>
-                    <span class="flex-1 text-sm text-purple-800">${t.name}</span>
-                    <span class="text-xs text-purple-400">⏱ ${t.time} мин</span>
+                    <input type="checkbox" class="doneCheck w-4 h-4 cursor-pointer shrink-0 accent-purple-500" data-id="${t.id}">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-purple-900 font-medium">${t.name}</p>
+                        <p class="text-xs text-purple-400">${t.category} · ${t.time} мин</p>
+                    </div>
+                </div>`).join("")}
+                ${sunDoneEarly.map(t => `
+                <div class="flex items-center gap-2 border rounded-xl px-3 py-2 bg-green-50 border-green-100 opacity-60">
+                    <input type="checkbox" class="doneCheck w-4 h-4 cursor-pointer shrink-0 accent-green-500" data-id="${t.id}" checked>
+                    <span class="flex-1 text-sm line-through text-gray-400">${t.name}</span>
+                    <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-lg shrink-0" data-id="${t.id}">↩</button>
                 </div>`).join("")}
             </div>
         </details>`;
@@ -2257,12 +2267,17 @@ function attachEvents() {
                         state.sprintStreak = (state.sprintStreak || 0) + 1;
                         state.lastSprintWeek = weekKey;
                     }
-                    if (!sunTasks.length) {
+                    const sunAlreadyDone = sunTasks.length > 0 && sunTasks.every(t => t.done);
+                    if (!sunTasks.length || sunAlreadyDone) {
                         state.last100PercentDate = new Date().toISOString();
                     }
                     saveState();
                     showConfetti();
                     setTimeout(() => showRewardModal(), 400);
+                    // Если воскресные уже все сделаны заранее — сразу показать мини-финал после паузы
+                    if (sunAlreadyDone && sunTasks.length > 0) {
+                        setTimeout(() => showSundayCompleteModal(), 3000);
+                    }
                     render();
                     return;
                 }
