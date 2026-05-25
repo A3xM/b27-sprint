@@ -976,6 +976,7 @@ function renderAdminView() {
                     ${t.prefs[m]||1}/10
                 </span>
                 <button class="reassignBtn text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-lg" data-id="${t.id}">↪ Передать</button>
+                <button class="deleteFromSprintBtn text-xs text-red-300 hover:text-red-500 px-1 py-1 rounded" data-id="${t.id}" title="Удалить из спринта">🗑</button>
             </div>`).join("");
 
         const doneCards = done.map(t => `
@@ -983,6 +984,7 @@ function renderAdminView() {
                 <span class="flex-1 text-xs line-through text-gray-400">${t.name}</span>
                 <span class="text-xs text-gray-300">⏱ ${t.time} мин</span>
                 <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-lg" data-id="${t.id}">↩ Вернуть</button>
+                <button class="deleteFromSprintBtn text-xs text-red-300 hover:text-red-500 px-1 py-1 rounded" data-id="${t.id}" title="Удалить из спринта">🗑</button>
             </div>`).join("");
 
         return `
@@ -2313,6 +2315,24 @@ function attachEvents() {
     // 💡 Ожидающая награда (кнопка у администратора)
     const pendingRewardBtn = document.getElementById("showPendingRewardBtn");
     if (pendingRewardBtn) pendingRewardBtn.onclick = () => showRewardModal();
+
+    // 🗑 Удалить задачу из спринта (только администратор)
+    document.querySelectorAll(".deleteFromSprintBtn").forEach(btn => {
+        btn.onclick = e => {
+            e.stopPropagation();
+            const id   = btn.dataset.id;
+            const task = state.tasks.find(t => t.id === id);
+            if (!task) return;
+            if (!confirm(`Удалить «${task.name}» из спринта?`)) return;
+            state.tasks = state.tasks.filter(t => t.id !== id);
+            // Убираем базовый ID из выбора, чтобы не попал в следующий спринт
+            const baseId = id.replace(/_Миша$|_Максим$|_Майя$|_Мама$|_helper$|_sub$/, "");
+            state.selectedSprintTaskIds.delete(id);
+            state.selectedSprintTaskIds.delete(baseId);
+            saveState(); render();
+            showToast(`🗑 «${task.name}» удалена из спринта`);
+        };
+    });
 
     // Помидор — для всех участников
     document.querySelectorAll(".timerBtn").forEach(btn => {
