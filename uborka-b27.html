@@ -741,6 +741,7 @@ let state = {
     adultMode: { Майя:false, Максим:false },
     last100PercentDate: null,
     lastSat100Date: null,       // дата завершения субботнего блока
+    satPhaseComplete: false,    // суббота закрыта → воскресные задачи открыты
     dynamicPrefs: {},
     mishaFrogTaskId: null,
     customTasks: [],          // пользовательские задачи (добавленные вручную)
@@ -1040,18 +1041,23 @@ function renderExecution() {
     const user = state.currentUser;
     if (user === "Администратор") return renderAdminView();
 
-    const myTasks  = state.tasks.filter(t => t.assignee === user);
-    ensureTaskOrder(user, myTasks);
-    const satTasksRaw = myTasks.filter(t => t.sprint === "sat" && !t.done);
-    const sunTasksRaw = myTasks.filter(t => t.sprint === "sun" && !t.done);
-    const satTasks = getSortedUserTasks(satTasksRaw, user);
-    const sunTasks = getSortedUserTasks(sunTasksRaw, user);
-    const done     = myTasks.filter(t => t.done);
-    const totalLeft = [...satTasks, ...sunTasks].reduce((s,t)=>s+t.time,0);
-    const pct      = myTasks.length ? Math.round(done.length / myTasks.length * 100) : 0;
-    const isMisha  = user === "Миша";
-    const isMama   = user === "Мама";
-    const isAdmin  = user === "Администратор";
+    const myTasks    = state.tasks.filter(t => t.assignee === user);
+    const satPhase   = !state.satPhaseComplete;  // true = фаза субботы ещё идёт
+    // Показываем только задачи текущей фазы (кроме уже выполненных)
+    const activeTasks = satPhase
+        ? myTasks.filter(t => t.sprint === "sat")
+        : myTasks.filter(t => t.sprint === "sun");
+    ensureTaskOrder(user, activeTasks);
+    const pendingActive = activeTasks.filter(t => !t.done);
+    const activeTasksSorted = getSortedUserTasks(pendingActive, user);
+    const done      = myTasks.filter(t => t.done);
+    const totalLeft = pendingActive.reduce((s,t) => s + t.time, 0);
+    const pct       = activeTasks.length ? Math.round(activeTasks.filter(t=>t.done).length / activeTasks.length * 100) : 0;
+    const isMisha   = user === "Миша";
+    const isMama    = user === "Мама";
+    const isAdmin   = user === "Администратор";
+    // Воскресных задач вообще нет в спринте?
+    const hasSunTasks = state.tasks.some(t => t.sprint === "sun");
 
     // Лягушка — для всех участников
     const myFrogId = getFrogId(user);
@@ -1086,7 +1092,9 @@ function renderExecution() {
     <div class="space-y-4">
         <div class="bg-white rounded-2xl shadow-lg p-4 flex flex-wrap gap-3 items-center justify-between">
             <div>
-                <h2 class="text-xl font-bold text-amber-800">Спринт — ${user}</h2>
+                <h2 class="text-xl font-bold text-amber-800">
+                    ${satPhase ? "📅 Суббота — " : "📅 Воскресенье — "}${user}
+                </h2>
                 <p class="text-sm text-gray-500">${totalLeft} мин осталось · ${pct}% выполнено</p>
             </div>
             <div class="flex gap-2 flex-wrap items-center">
@@ -1115,73 +1123,49 @@ function renderExecution() {
 
         ${frogBanner}
 
-        <div class="grid md:grid-cols-2 gap-4">
-            <div>
-                <div class="flex items-center justify-between mb-2">
-                    <h3 class="font-bold text-blue-700">📅 Суббота (${satTasks.length})</h3>
-                    ${!isAdmin ? `<button class="quickAddBtn text-xs text-blue-400 border border-dashed border-blue-200 rounded-lg px-2 py-1 tap44" data-sprint="sat" data-user="${user}">+ задача</button>` : ""}
-                </div>
-                ${satTasks.length ? satTasks.map((t,i)=>renderCard(t,user,i,satTasks.length)).join("") : `<p class="text-gray-400 text-sm">Нет задач</p>`}
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold ${satPhase ? "text-blue-700" : "text-purple-700"}">
+                    ${satPhase ? `📅 Суббота (${activeTasksSorted.length})` : `📅 Воскресенье (${activeTasksSorted.length})`}
+                </h3>
+                <button class="quickAddBtn text-xs ${satPhase?"text-blue-400 border-blue-200":"text-purple-400 border-purple-200"} border border-dashed rounded-lg px-2 py-1 tap44"
+                    data-sprint="${satPhase?"sat":"sun"}" data-user="${user}">+ задача</button>
             </div>
-            <div>
-                <div class="flex items-center justify-between mb-2">
-                    <h3 class="font-bold text-purple-700">📅 Воскресенье (${sunTasks.length})</h3>
-                    ${!isAdmin ? `<button class="quickAddBtn text-xs text-purple-400 border border-dashed border-purple-200 rounded-lg px-2 py-1 tap44" data-sprint="sun" data-user="${user}">+ задача</button>` : ""}
-                </div>
-                ${sunTasks.length ? sunTasks.map((t,i)=>renderCard(t,user,i,sunTasks.length)).join("") : `<p class="text-gray-400 text-sm">Нет задач</p>`}
-                ${done.length ? `
-                <details class="mt-3">
-                    <summary class="text-sm text-gray-500 cursor-pointer">✅ Выполнено (${done.length})</summary>
-                    <div class="mt-1 space-y-1">
-                    ${done.map(t=>`
-                        <div class="flex items-center gap-2 border-b py-1 group">
-                            <span class="flex-1 text-sm line-through text-gray-400">${t.name}</span>
-                            <span class="text-xs text-gray-300">⏱ ${t.time} мин</span>
-                            <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-lg" data-id="${t.id}">↩ Вернуть</button>
-                        </div>`).join("")}
-                    </div>
-                </details>` : ""}
-            </div>
+            ${activeTasksSorted.length
+                ? activeTasksSorted.map((t,i) => renderCard(t, user, i, activeTasksSorted.length)).join("")
+                : `<p class="text-gray-400 text-sm">Нет задач</p>`}
         </div>
 
-        ${(() => {
-            const mySat = myTasks.filter(t => t.sprint === "sat");
-            const mySun = myTasks.filter(t => t.sprint === "sun");
-            const satDoneN = mySat.filter(t => t.done).length;
-            const sunDoneN = mySun.filter(t => t.done).length;
-            const satPct   = mySat.length ? Math.round(satDoneN/mySat.length*100) : 100;
-            const sunPct   = mySun.length ? Math.round(sunDoneN/mySun.length*100) : 100;
-            const allFamilySatDone = state.tasks.filter(t=>t.sprint==="sat").every(t=>t.done) && state.tasks.filter(t=>t.sprint==="sat").length > 0;
-            return `
+        ${done.length ? `
+        <details>
+            <summary class="text-sm text-gray-500 cursor-pointer">✅ Выполнено (${done.length})</summary>
+            <div class="mt-2 space-y-1">
+            ${done.map(t=>`
+                <div class="flex items-center gap-2 border-b py-1">
+                    <span class="flex-1 text-sm line-through text-gray-400">${t.name}</span>
+                    <span class="text-xs text-gray-300">⏱ ${t.time} мин</span>
+                    <button class="undoBtn text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-lg" data-id="${t.id}">↩ Вернуть</button>
+                </div>`).join("")}
+            </div>
+        </details>` : ""}
+
         <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
-            <p class="font-bold text-amber-800">🏆 Прогресс спринта</p>
-            ${mySat.length ? `
+            <p class="font-bold text-amber-800">🏆 Прогресс</p>
             <div>
                 <div class="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>📅 Суббота</span>
-                    <span>${satDoneN}/${mySat.length} · ${satPct}%</span>
+                    <span>${satPhase ? "📅 Суббота" : "📅 Воскресенье"}</span>
+                    <span>${activeTasks.filter(t=>t.done).length}/${activeTasks.length} · ${pct}%</span>
                 </div>
                 <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div class="h-2 rounded-full transition-all ${satPct===100?"bg-green-500":"bg-amber-400"}" style="width:${satPct}%"></div>
+                    <div class="h-2 rounded-full transition-all ${pct===100?"bg-green-500":satPhase?"bg-amber-400":"bg-purple-400"}" style="width:${pct}%"></div>
                 </div>
-            </div>` : ""}
-            ${mySun.length ? `
-            <div>
-                <div class="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>📅 Воскресенье</span>
-                    <span>${sunDoneN}/${mySun.length} · ${sunPct}%</span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div class="h-2 rounded-full transition-all ${sunPct===100?"bg-green-500":"bg-purple-400"}" style="width:${sunPct}%"></div>
-                </div>
-            </div>` : ""}
-            ${pct===100
-                ? `<p class="text-green-700 font-semibold text-sm">✅ Всё выполнено! Выберите награду: 🍿 Фильм  🍦 Мороженое  🌲 Природа</p>`
-                : allFamilySatDone && !isAdmin
-                    ? `<p class="text-amber-700 text-sm font-semibold">🌅 Суббота завершена — осталось воскресенье!</p>`
-                    : `<p class="text-gray-500 text-sm">Выполни все задачи — выбери награду для семьи</p>`}
-        </div>`;
-        })()}
+            </div>
+            ${satPhase && hasSunTasks
+                ? `<p class="text-xs text-gray-400">После субботы откроются воскресные задачи 📦</p>`
+                : pct===100
+                    ? `<p class="text-green-700 font-semibold text-sm">✅ Всё выполнено!</p>`
+                    : ""}
+        </div>
     </div>`;
 }
 
@@ -2215,6 +2199,7 @@ function attachEvents() {
         state.currentUser = "Администратор";
         state.last100PercentDate = null;
         state.lastSat100Date     = null;
+        state.satPhaseComplete   = false;
         state.userCompletedDates = {};
         saveState(); render();
     };
@@ -2234,48 +2219,53 @@ function attachEvents() {
             showContributionToast(task, state.currentUser);
             saveState();
 
-            // ── Приоритеты праздников: суббота → воскресенье → пользователь ──
+            // ── Приоритеты праздников по фазам ──
             const cu       = state.currentUser;
             const satTasks = state.tasks.filter(t => t.sprint === "sat");
             const sunTasks = state.tasks.filter(t => t.sprint === "sun");
-            const satAllDone = satTasks.length > 0 && satTasks.every(t => t.done);
-            const allDone    = state.tasks.every(t => t.done);
 
-            // 1. Все субботние дела готовы → главный праздник с выбором награды
-            if (satAllDone && !state.lastSat100Date) {
-                state.lastSat100Date = new Date().toISOString();
-                const weekKey = getWeekKey();
-                if (state.lastSprintWeek !== weekKey) {
-                    state.sprintStreak = (state.sprintStreak || 0) + 1;
-                    state.lastSprintWeek = weekKey;
+            if (!state.satPhaseComplete) {
+                // ФАЗА 1: проверяем только субботние задачи
+                const satAllDone = satTasks.length > 0 && satTasks.every(t => t.done);
+                if (satAllDone) {
+                    state.satPhaseComplete = true;
+                    state.lastSat100Date   = new Date().toISOString();
+                    const weekKey = getWeekKey();
+                    if (state.lastSprintWeek !== weekKey) {
+                        state.sprintStreak = (state.sprintStreak || 0) + 1;
+                        state.lastSprintWeek = weekKey;
+                    }
+                    if (!sunTasks.length) {
+                        state.last100PercentDate = new Date().toISOString();
+                    }
+                    saveState();
+                    showConfetti();
+                    setTimeout(() => showRewardModal(), 400);
+                    render();
+                    return;
                 }
-                if (!sunTasks.length || allDone) {
+            } else {
+                // ФАЗА 2: проверяем только воскресные задачи
+                const sunAllDone = sunTasks.length > 0 && sunTasks.every(t => t.done);
+                if (sunAllDone && !state.last100PercentDate) {
                     state.last100PercentDate = new Date().toISOString();
+                    saveState();
+                    showConfetti();
+                    setTimeout(() => showSundayCompleteModal(), 400);
+                    render();
+                    return;
                 }
-                saveState();
-                showConfetti();
-                setTimeout(() => showRewardModal(), 400);
-                render();
-                return;
             }
 
-            // 2. Все воскресные дела тоже готовы → мини-карточка финала
-            if (allDone && !state.last100PercentDate) {
-                state.last100PercentDate = new Date().toISOString();
-                saveState();
-                showConfetti();
-                setTimeout(() => showSundayCompleteModal(), 400);
-                render();
-                return;
-            }
-
-            // 3. Текущий участник закончил свою часть (а общий праздник ещё не наступил)
+            // Участник закончил свои задачи текущей фазы
             if (cu !== "Администратор") {
-                const myAll     = state.tasks.filter(t => t.assignee === cu);
-                const myAllDone = myAll.length > 0 && myAll.every(t => t.done);
-                if (myAllDone && !state.userCompletedDates?.[cu]) {
+                const phase    = state.satPhaseComplete ? "sun" : "sat";
+                const myPhase  = state.tasks.filter(t => t.assignee === cu && t.sprint === phase);
+                const myPhaseDone = myPhase.length > 0 && myPhase.every(t => t.done);
+                const dKey     = cu + "_" + phase;
+                if (myPhaseDone && !state.userCompletedDates?.[dKey]) {
                     if (!state.userCompletedDates) state.userCompletedDates = {};
-                    state.userCompletedDates[cu] = new Date().toISOString();
+                    state.userCompletedDates[dKey] = new Date().toISOString();
                     saveState();
                     showConfetti();
                     setTimeout(() => showUserCompleteModal(cu), 400);
@@ -2405,7 +2395,10 @@ function attachEvents() {
                 state.mishaPoints = Math.max(0, state.mishaPoints - task.time * 2);
             }
             state.last100PercentDate = null;
-            if (task.sprint === "sat") state.lastSat100Date = null;
+            if (task.sprint === "sat") {
+                state.lastSat100Date   = null;
+                state.satPhaseComplete = false;
+            }
             saveState(); render();
             const toast = document.createElement("div");
             toast.className = "fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-xl z-50 shadow-lg";
