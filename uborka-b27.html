@@ -118,6 +118,7 @@ const FULL_TASKS_DB = [
 
     { id:"p3", name:"Погладить и убрать свои вещи",
       type:"personal", category:"Бельё", freq:"weekly", time:20,
+      defaultSprint:"sun",                    // стирка в субботу → гладить в воскресенье
       who:["Максим","Майя","Мама"],          // Миша складывает, не гладит
       note:"Миша складывает сам — без глажки",
       prefs:{Миша:9,Максим:5,Майя:5,Мама:6} },
@@ -624,8 +625,9 @@ function assignBalanced(tasks) {
 
     // 1. PERSONAL — копия каждому
     tasks.filter(t => t.type === "personal").forEach(t => {
+        const sp = t.defaultSprint || "sat";
         (t.who || MEMBERS).forEach(m => {
-            result.push({ ...t, id: t.id+"_"+m, assignee: m, done:false, sprint:"sat", isPersonal:true });
+            result.push({ ...t, id: t.id+"_"+m, assignee: m, done:false, sprint:sp, isPersonal:true });
         });
     });
 
@@ -633,12 +635,13 @@ function assignBalanced(tasks) {
     tasks.filter(t => t.type === "adhd").forEach(t => {
         const who  = t.who || ["Миша"];
         const best = who.reduce((a,b) => (t.prefs[a]||1) >= (t.prefs[b]||1) ? a : b);
-        result.push({ ...t, assignee: best, done:false, sprint:"sat" });
+        result.push({ ...t, assignee: best, done:false, sprint: t.defaultSprint || "sat" });
     });
 
     // 3. MOM_PRIMARY — Маме + подзадача помощнику
     tasks.filter(t => t.type === "mom_primary").forEach(t => {
-        result.push({ ...t, assignee:"Мама", done:false, sprint:"sat" });
+        const sp = t.defaultSprint || "sat";
+        result.push({ ...t, assignee:"Мама", done:false, sprint:sp });
         if (t.helper) {
             result.push({
                 ...t,
@@ -646,7 +649,7 @@ function assignBalanced(tasks) {
                 name: t.helper.name,
                 time: t.helper.time,
                 assignee: t.helper.who,
-                done: false, sprint:"sat",
+                done: false, sprint: t.helper.defaultSprint || sp,
                 isHelper: true, optional: t.helper.optional || false,
                 adhdFriendly: t.helper.adhdFriendly || false,
                 parentName: t.name,
@@ -686,7 +689,8 @@ function assignBalanced(tasks) {
         if (!best) best = eligible[0];
         counts[best]++;
         sums[best] += (t.prefs[best]||1);
-        result.push({ ...t, assignee: best, done:false, sprint:"sat" });
+        const sp = t.defaultSprint || "sat";
+        result.push({ ...t, assignee: best, done:false, sprint: sp });
 
         // Авто-подзадача для Миши если есть
         if (t.subtask) {
@@ -697,7 +701,7 @@ function assignBalanced(tasks) {
                 time: t.subtask.time,
                 assignee: t.subtask.who,
                 adhdFriendly: t.subtask.adhdFriendly || false,
-                done: false, sprint:"sat",
+                done: false, sprint: t.subtask.defaultSprint || sp,
                 isMishaSubtask: true,
                 parentName: t.name,
             });
@@ -737,6 +741,7 @@ let state = {
     achievements: [],
     adultMode: { Майя:false, Максим:false },
     last100PercentDate: null,
+    lastSat100Date: null,       // дата завершения субботнего блока
     dynamicPrefs: {},
     mishaFrogTaskId: null,
     customTasks: [],          // пользовательские задачи (добавленные вручную)
@@ -1041,6 +1046,7 @@ function renderExecution() {
     const pct      = myTasks.length ? Math.round(done.length / myTasks.length * 100) : 0;
     const isMisha  = user === "Миша";
     const isMama   = user === "Мама";
+    const isAdmin  = user === "Администратор";
 
     // Лягушка — для всех участников
     const myFrogId = getFrogId(user);
@@ -1133,12 +1139,44 @@ function renderExecution() {
             </div>
         </div>
 
-        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <p class="font-bold text-amber-800">🏆 Награда за спринт</p>
+        ${(() => {
+            const mySat = myTasks.filter(t => t.sprint === "sat");
+            const mySun = myTasks.filter(t => t.sprint === "sun");
+            const satDoneN = mySat.filter(t => t.done).length;
+            const sunDoneN = mySun.filter(t => t.done).length;
+            const satPct   = mySat.length ? Math.round(satDoneN/mySat.length*100) : 100;
+            const sunPct   = mySun.length ? Math.round(sunDoneN/mySun.length*100) : 100;
+            const allFamilySatDone = state.tasks.filter(t=>t.sprint==="sat").every(t=>t.done) && state.tasks.filter(t=>t.sprint==="sat").length > 0;
+            return `
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+            <p class="font-bold text-amber-800">🏆 Прогресс спринта</p>
+            ${mySat.length ? `
+            <div>
+                <div class="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>📅 Суббота</span>
+                    <span>${satDoneN}/${mySat.length} · ${satPct}%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div class="h-2 rounded-full transition-all ${satPct===100?"bg-green-500":"bg-amber-400"}" style="width:${satPct}%"></div>
+                </div>
+            </div>` : ""}
+            ${mySun.length ? `
+            <div>
+                <div class="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>📅 Воскресенье</span>
+                    <span>${sunDoneN}/${mySun.length} · ${sunPct}%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div class="h-2 rounded-full transition-all ${sunPct===100?"bg-green-500":"bg-purple-400"}" style="width:${sunPct}%"></div>
+                </div>
+            </div>` : ""}
             ${pct===100
-                ? `<p class="text-green-700 font-semibold">Выполнено 100%! Выберите награду: 🍿 Фильм  🍦 Мороженое  🌲 Природа</p>`
-                : `<p class="text-gray-500 text-sm">Выполни все задачи — выбери награду для семьи</p>`}
-        </div>
+                ? `<p class="text-green-700 font-semibold text-sm">✅ Всё выполнено! Выберите награду: 🍿 Фильм  🍦 Мороженое  🌲 Природа</p>`
+                : allFamilySatDone && !isAdmin
+                    ? `<p class="text-amber-700 text-sm font-semibold">🌅 Суббота завершена — осталось воскресенье!</p>`
+                    : `<p class="text-gray-500 text-sm">Выполни все задачи — выбери награду для семьи</p>`}
+        </div>`;
+        })()}
     </div>`;
 }
 
@@ -1571,6 +1609,47 @@ function showContributionToast(task, user) {
 }
 
 // ─────────────────── МОДАЛКА НАГРАДЫ (100%) + АРТЕФАКТ ───────────────────
+// ─────────────────── 🎉 СУББОТА ЗАВЕРШЕНА ───────────────────
+function showSaturdayCompleteModal() {
+    const satDone  = state.tasks.filter(t => t.sprint === "sat").length;
+    const sunLeft  = state.tasks.filter(t => t.sprint === "sun" && !t.done).length;
+
+    const modal = document.createElement("div");
+    modal.className = "fixed inset-0 bg-black bg-opacity-70 bs-wrap flex items-center justify-center z-50 p-4";
+    modal.innerHTML = `
+    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center bs-card">
+        <div style="font-size:4rem;line-height:1.1">🌅</div>
+        <h2 class="text-2xl font-black text-amber-800 mt-2 mb-1">Суббота — готово!</h2>
+        <p class="text-gray-500 text-sm mb-4">Все субботние дела закрыты — основная работа сделана 💪</p>
+        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold text-amber-800">📅 Суббота</span>
+                <span class="text-green-600 font-black">✅ ${satDone} дел</span>
+            </div>
+            ${sunLeft > 0 ? `
+            <div class="flex items-center justify-between">
+                <span class="text-sm font-semibold text-purple-700">📅 Воскресенье</span>
+                <span class="text-purple-600 font-bold">${sunLeft} осталось</span>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">Воскресные дела — уже после стирки 👕</p>` : ""}
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+            <div class="bg-green-50 border border-green-200 rounded-2xl py-3">
+                <div class="text-2xl">🍿</div>
+                <p class="text-xs font-bold text-green-700 mt-1">Фильм вечером!</p>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-2xl py-3">
+                <div class="text-2xl">🍦</div>
+                <p class="text-xs font-bold text-blue-700 mt-1">Мороженое!</p>
+            </div>
+        </div>
+        <button id="closeSatComplete" class="w-full bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">🎉 Ура!</button>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector("#closeSatComplete").onclick = () => modal.remove();
+    modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+}
+
 function showRewardModal() {
     const streak  = state.sprintStreak || 0;
     const rewards = ["🍿 Фильм всей семьёй", "🍦 Мороженое", "🌲 Прогулка на природу", "🎮 Игры вместе"];
@@ -1994,8 +2073,21 @@ function attachEvents() {
             }
             showContributionToast(task, state.currentUser);
             saveState();
+
+            // Проверка: все субботние задачи выполнены?
+            const satTasks = state.tasks.filter(t => t.sprint === "sat");
+            const satAllDone = satTasks.length > 0 && satTasks.every(t => t.done);
+            if (satAllDone && !state.lastSat100Date && !state.tasks.every(t=>t.done)) {
+                state.lastSat100Date = new Date().toISOString();
+                saveState();
+                showConfetti();
+                setTimeout(() => showSaturdayCompleteModal(), 400);
+            }
+
+            // Проверка: вся семья на 100%?
             if (state.tasks.every(t=>t.done) && !state.last100PercentDate) {
                 state.last100PercentDate = new Date().toISOString();
+                state.lastSat100Date = state.lastSat100Date || new Date().toISOString();
                 // Обновляем серию спринтов
                 const weekKey = getWeekKey();
                 if (state.lastSprintWeek !== weekKey) {
@@ -2108,6 +2200,7 @@ function attachEvents() {
                 state.mishaPoints = Math.max(0, state.mishaPoints - task.time * 2);
             }
             state.last100PercentDate = null;
+            if (task.sprint === "sat") state.lastSat100Date = null;
             saveState(); render();
             const toast = document.createElement("div");
             toast.className = "fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-xl z-50 shadow-lg";
