@@ -1594,24 +1594,37 @@ function showContributionToast(task, user) {
     const famDone  = state.tasks.filter(t => t.done).length;
     const famTotal = state.tasks.length;
     const famPct   = famTotal ? Math.round(famDone / famTotal * 100) : 0;
+    const isMisha  = user === "Миша";
 
     const msgs = [
-        `💪 ${task.time} мин — вклад в семью!`,
-        `🏠 Ты взял на себя ${task.time} мин. Семья ценит!`,
-        `✨ Сделано! Семья уже на ${famPct}%`,
+        `✅ «${task.name}» — готово! Дом чуточку лучше`,
+        `🙌 Сделано! Без тебя так бы и висело`,
+        `🏠 Дом это замечает, даже если молчит`,
+        `💛 Именно из таких дел и складывается уютный дом`,
+        `🔥 Взял и сделал! Вот это подход`,
+        `✨ Семья продвигается — и это твоя заслуга`,
+        `😌 Порядок — когда каждый сделал своё. Ты сделал!`,
+        `🎯 Ещё одно дело закрыто. Так и делается!`,
+        `💪 Без тебя это бы само не произошло`,
+        `🌟 Молодец! Вся семья идёт вперёд`,
+        `☕ Сделал дело — можно спокойно отдохнуть`,
+        `🏡 Чистый дом — это общий труд. Ты часть этого`,
+        isMisha ? `⭐ Миша сделал! Зарабатываешь баллы и уважение` : `🤝 Когда все делают по чуть-чуть — получается много`,
+        `😊 Одним делом меньше, одной улыбкой больше`,
+        `🚀 Семья уже на ${famPct}% — продолжаем!`,
     ];
     const msg = msgs[famDone % msgs.length];
 
     const toast = document.createElement("div");
     toast.className = "fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-xl text-white font-bold text-sm text-center max-w-xs pointer-events-none";
     toast.style.background = "linear-gradient(135deg,#10b981,#059669)";
-    toast.innerHTML = `${msg}<br><span class="font-normal text-xs opacity-80">Семья: ${famDone}/${famTotal} задач (${famPct}%)</span>`;
+    toast.innerHTML = `${msg}<br><span class="font-normal text-xs opacity-80">${famDone} из ${famTotal} дел закрыто</span>`;
     document.body.appendChild(toast);
     setTimeout(() => {
         toast.style.transition = "opacity .5s";
         toast.style.opacity    = "0";
         setTimeout(() => toast.remove(), 500);
-    }, 2400);
+    }, 2700);
 }
 
 // ─────────────────── МОДАЛКА НАГРАДЫ (100%) + АРТЕФАКТ ───────────────────
@@ -1695,44 +1708,40 @@ function showUserCompleteModal(user) {
     modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 }
 
-// ─────────────────── 🎉 СУББОТА ЗАВЕРШЕНА ───────────────────
-function showSaturdayCompleteModal() {
-    const satDone  = state.tasks.filter(t => t.sprint === "sat").length;
-    const sunLeft  = state.tasks.filter(t => t.sprint === "sun" && !t.done).length;
+// ─────────────────── 🌟 ВОСКРЕСЕНЬЕ — ФИНАЛ СПРИНТА ───────────────────
+function showSundayCompleteModal() {
+    const satCount  = state.tasks.filter(t => t.sprint === "sat").length;
+    const sunCount  = state.tasks.filter(t => t.sprint === "sun").length;
+    const total     = state.tasks.length;
+    const streak    = state.sprintStreak || 0;
 
     const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-70 bs-wrap flex items-center justify-center z-50 p-4";
+    modal.className = "fixed inset-0 bg-black bg-opacity-60 bs-wrap flex items-center justify-center z-50 p-4";
     modal.innerHTML = `
-    <div class="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center bs-card">
-        <div style="font-size:4rem;line-height:1.1">🌅</div>
-        <h2 class="text-2xl font-black text-amber-800 mt-2 mb-1">Суббота — готово!</h2>
-        <p class="text-gray-500 text-sm mb-4">Все субботние дела закрыты — основная работа сделана 💪</p>
-        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5">
-            <div class="flex items-center justify-between mb-2">
-                <span class="text-sm font-semibold text-amber-800">📅 Суббота</span>
-                <span class="text-green-600 font-black">✅ ${satDone} дел</span>
+    <div class="bg-white rounded-3xl shadow-2xl p-5 w-full max-w-sm text-center bs-card">
+        <div style="font-size:3rem;line-height:1.1">🌙✨</div>
+        <h2 class="text-xl font-black text-purple-800 mt-2 mb-1">Воскресенье — финал!</h2>
+        <p class="text-gray-500 text-sm mb-4">Спринт закрыт полностью. Всё готово до следующих выходных!</p>
+        <div class="grid grid-cols-3 gap-2 mb-4 text-center">
+            <div class="bg-amber-50 rounded-2xl py-3 px-2">
+                <p class="text-2xl font-black text-amber-700">${satCount}</p>
+                <p class="text-xs text-gray-400">сб-дел</p>
             </div>
-            ${sunLeft > 0 ? `
-            <div class="flex items-center justify-between">
-                <span class="text-sm font-semibold text-purple-700">📅 Воскресенье</span>
-                <span class="text-purple-600 font-bold">${sunLeft} осталось</span>
+            <div class="bg-purple-50 rounded-2xl py-3 px-2">
+                <p class="text-2xl font-black text-purple-700">${sunCount}</p>
+                <p class="text-xs text-gray-400">вс-дел</p>
             </div>
-            <p class="text-xs text-gray-400 mt-2">Воскресные дела — уже после стирки 👕</p>` : ""}
-        </div>
-        <div class="grid grid-cols-2 gap-3 mb-4">
-            <div class="bg-green-50 border border-green-200 rounded-2xl py-3">
-                <div class="text-2xl">🍿</div>
-                <p class="text-xs font-bold text-green-700 mt-1">Фильм вечером!</p>
-            </div>
-            <div class="bg-blue-50 border border-blue-200 rounded-2xl py-3">
-                <div class="text-2xl">🍦</div>
-                <p class="text-xs font-bold text-blue-700 mt-1">Мороженое!</p>
+            <div class="bg-green-50 rounded-2xl py-3 px-2">
+                <p class="text-2xl font-black text-green-700">${total}</p>
+                <p class="text-xs text-gray-400">всего</p>
             </div>
         </div>
-        <button id="closeSatComplete" class="w-full bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">🎉 Ура!</button>
+        ${streak > 1 ? `<p class="text-orange-500 font-bold text-sm mb-3">🔥 Серия: ${streak} спринтов подряд!</p>` : ""}
+        <p class="text-gray-400 text-xs mb-4">До следующей субботы 👋</p>
+        <button id="closeSunComplete" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl font-bold">Отлично, до следующей!</button>
     </div>`;
     document.body.appendChild(modal);
-    modal.querySelector("#closeSatComplete").onclick = () => modal.remove();
+    modal.querySelector("#closeSunComplete").onclick = () => modal.remove();
     modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 }
 
@@ -2243,20 +2252,14 @@ function attachEvents() {
             }
 
             // Проверка: все субботние задачи выполнены?
-            const satTasks = state.tasks.filter(t => t.sprint === "sat");
+            const satTasks   = state.tasks.filter(t => t.sprint === "sat");
+            const sunTasks   = state.tasks.filter(t => t.sprint === "sun");
             const satAllDone = satTasks.length > 0 && satTasks.every(t => t.done);
-            if (satAllDone && !state.lastSat100Date && !state.tasks.every(t=>t.done)) {
-                state.lastSat100Date = new Date().toISOString();
-                saveState();
-                showConfetti();
-                setTimeout(() => showSaturdayCompleteModal(), 400);
-            }
+            const allDone    = state.tasks.every(t => t.done);
 
-            // Проверка: вся семья на 100%?
-            if (state.tasks.every(t=>t.done) && !state.last100PercentDate) {
-                state.last100PercentDate = new Date().toISOString();
-                state.lastSat100Date = state.lastSat100Date || new Date().toISOString();
-                // Обновляем серию спринтов
+            if (satAllDone && !state.lastSat100Date) {
+                state.lastSat100Date = new Date().toISOString();
+                // Серия спринтов — считаем по субботе (основное событие)
                 const weekKey = getWeekKey();
                 if (state.lastSprintWeek !== weekKey) {
                     state.sprintStreak = (state.sprintStreak || 0) + 1;
@@ -2264,7 +2267,24 @@ function attachEvents() {
                 }
                 saveState();
                 showConfetti();
-                setTimeout(() => showRewardModal(), 400);
+                if (sunTasks.length > 0 && !allDone) {
+                    // Есть воскресные дела — суббота это главный праздник с наградой
+                    setTimeout(() => showRewardModal(), 400);
+                } else {
+                    // Нет воскресных или всё выполнено сразу — полный праздник
+                    state.last100PercentDate = new Date().toISOString();
+                    saveState();
+                    setTimeout(() => showRewardModal(), 400);
+                }
+            }
+
+            // Проверка: вся семья на 100% (включая воскресные дела)?
+            if (allDone && !state.last100PercentDate) {
+                state.last100PercentDate = new Date().toISOString();
+                saveState();
+                showConfetti();
+                // Суббота уже была отпразднована — показываем мини-карточку финала
+                setTimeout(() => showSundayCompleteModal(), 400);
             }
             render();
         };
