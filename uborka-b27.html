@@ -1149,6 +1149,28 @@ function renderExecution() {
             </div>
         </details>` : ""}
 
+        ${(() => {
+            if (!satPhase || !hasSunTasks) return "";
+            const mySun = myTasks.filter(t => t.sprint === "sun");
+            if (!mySun.length) return "";
+            const sunMin = mySun.reduce((s,t) => s+t.time, 0);
+            return `
+        <details class="opacity-60">
+            <summary class="cursor-pointer select-none">
+                <span class="text-sm font-semibold text-purple-600">📦 Воскресенье — превью (${mySun.length} дел, ~${sunMin} мин)</span>
+                <span class="text-xs text-gray-400 ml-1">· откроется после субботы</span>
+            </summary>
+            <div class="mt-2 space-y-1 pointer-events-none select-none">
+                ${mySun.map(t => `
+                <div class="flex items-center gap-2 border rounded-xl px-3 py-2 bg-purple-50 border-purple-100">
+                    <span class="w-3.5 h-3.5 rounded border-2 border-purple-200 shrink-0 inline-block"></span>
+                    <span class="flex-1 text-sm text-purple-800">${t.name}</span>
+                    <span class="text-xs text-purple-400">⏱ ${t.time} мин</span>
+                </div>`).join("")}
+            </div>
+        </details>`;
+        })()}
+
         <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
             <p class="font-bold text-amber-800">🏆 Прогресс</p>
             <div>
