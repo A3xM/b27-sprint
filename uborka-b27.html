@@ -2235,56 +2235,52 @@ function attachEvents() {
             showContributionToast(task, state.currentUser);
             saveState();
 
-            // Проверка: текущий участник закончил свою часть?
-            const cu = state.currentUser;
-            if (cu !== "Администратор") {
-                const myAll = state.tasks.filter(t => t.assignee === cu);
-                const myAllDone = myAll.length > 0 && myAll.every(t => t.done);
-                if (myAllDone && !state.userCompletedDates?.[cu] && !state.tasks.every(t=>t.done)) {
-                    if (!state.userCompletedDates) state.userCompletedDates = {};
-                    state.userCompletedDates[cu] = new Date().toISOString();
-                    saveState();
-                    showConfetti();
-                    setTimeout(() => showUserCompleteModal(cu), 400);
-                    render();
-                    return; // не запускаем субботний / общий триггер одновременно
-                }
-            }
-
-            // Проверка: все субботние задачи выполнены?
-            const satTasks   = state.tasks.filter(t => t.sprint === "sat");
-            const sunTasks   = state.tasks.filter(t => t.sprint === "sun");
+            // ── Приоритеты праздников: суббота → воскресенье → пользователь ──
+            const cu       = state.currentUser;
+            const satTasks = state.tasks.filter(t => t.sprint === "sat");
+            const sunTasks = state.tasks.filter(t => t.sprint === "sun");
             const satAllDone = satTasks.length > 0 && satTasks.every(t => t.done);
             const allDone    = state.tasks.every(t => t.done);
 
+            // 1. Все субботние дела готовы → главный праздник с выбором награды
             if (satAllDone && !state.lastSat100Date) {
                 state.lastSat100Date = new Date().toISOString();
-                // Серия спринтов — считаем по субботе (основное событие)
                 const weekKey = getWeekKey();
                 if (state.lastSprintWeek !== weekKey) {
                     state.sprintStreak = (state.sprintStreak || 0) + 1;
                     state.lastSprintWeek = weekKey;
                 }
+                if (!sunTasks.length || allDone) {
+                    state.last100PercentDate = new Date().toISOString();
+                }
                 saveState();
                 showConfetti();
-                if (sunTasks.length > 0 && !allDone) {
-                    // Есть воскресные дела — суббота это главный праздник с наградой
-                    setTimeout(() => showRewardModal(), 400);
-                } else {
-                    // Нет воскресных или всё выполнено сразу — полный праздник
-                    state.last100PercentDate = new Date().toISOString();
-                    saveState();
-                    setTimeout(() => showRewardModal(), 400);
-                }
+                setTimeout(() => showRewardModal(), 400);
+                render();
+                return;
             }
 
-            // Проверка: вся семья на 100% (включая воскресные дела)?
+            // 2. Все воскресные дела тоже готовы → мини-карточка финала
             if (allDone && !state.last100PercentDate) {
                 state.last100PercentDate = new Date().toISOString();
                 saveState();
                 showConfetti();
-                // Суббота уже была отпразднована — показываем мини-карточку финала
                 setTimeout(() => showSundayCompleteModal(), 400);
+                render();
+                return;
+            }
+
+            // 3. Текущий участник закончил свою часть (а общий праздник ещё не наступил)
+            if (cu !== "Администратор") {
+                const myAll     = state.tasks.filter(t => t.assignee === cu);
+                const myAllDone = myAll.length > 0 && myAll.every(t => t.done);
+                if (myAllDone && !state.userCompletedDates?.[cu]) {
+                    if (!state.userCompletedDates) state.userCompletedDates = {};
+                    state.userCompletedDates[cu] = new Date().toISOString();
+                    saveState();
+                    showConfetti();
+                    setTimeout(() => showUserCompleteModal(cu), 400);
+                }
             }
             render();
         };
