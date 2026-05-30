@@ -2579,13 +2579,23 @@ function showSyncModal() {
             </ol>
         </div>
 
-        <div class="mb-4">
+        <div class="mb-3">
             <label class="text-sm font-semibold text-gray-700 mb-1 block">Firebase Database URL</label>
             <input id="syncUrlInput" type="url"
                 value="${cfg.url ? cfg.url.replace('/b27-'+familyCode+'.json','') : ''}"
                 placeholder="https://my-project-default-rtdb.firebaseio.com"
                 class="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-            <p class="text-xs text-gray-400 mt-1">Код семьи: <strong>${familyCode}</strong> — используют все устройства одной семьи</p>
+        </div>
+        <div class="mb-4">
+            <label class="text-sm font-semibold text-gray-700 mb-1 block">Код семьи</label>
+            <div class="flex gap-2">
+                <input id="familyCodeInput" type="text"
+                    value="${familyCode}"
+                    placeholder="Например: ABC123"
+                    class="flex-1 border rounded-xl px-3 py-2.5 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <button id="copyCodeBtn" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm" title="Скопировать код">📋</button>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">⚠️ Одинаковый код на всех устройствах семьи. Первое устройство: скопируй и отправь коду остальным.</p>
         </div>
 
         <div class="flex gap-3">
@@ -2596,15 +2606,22 @@ function showSyncModal() {
     document.body.appendChild(modal);
 
     modal.querySelector("#saveSyncBtn").onclick = () => {
-        const raw = modal.querySelector("#syncUrlInput").value.trim().replace(/\/+$/, "");
+        const raw  = modal.querySelector("#syncUrlInput").value.trim().replace(/\/+$/, "");
+        const code = (modal.querySelector("#familyCodeInput").value.trim().toUpperCase() || familyCode);
         if (!raw) { showToast("Введи URL базы данных"); return; }
-        const syncUrl = raw + "/b27-" + familyCode + ".json";
-        saveSyncConfig({ url: syncUrl, familyCode });
+        if (!code) { showToast("Введи код семьи"); return; }
+        const syncUrl = raw + "/b27-" + code + ".json";
+        saveSyncConfig({ url: syncUrl, familyCode: code });
         modal.remove();
         startSyncPolling();
         syncPush({ ...state, selectedSprintTaskIds: Array.from(state.selectedSprintTaskIds), _ts: state._ts });
         showToast("✅ Синхронизация включена!");
         render();
+    };
+    modal.querySelector("#copyCodeBtn").onclick = () => {
+        const code = modal.querySelector("#familyCodeInput").value.trim().toUpperCase();
+        navigator.clipboard?.writeText(code).then(() => showToast("📋 Код скопирован: " + code))
+            .catch(() => showToast("Код: " + code));
     };
     if (modal.querySelector("#disableSyncBtn")) {
         modal.querySelector("#disableSyncBtn").onclick = () => {
