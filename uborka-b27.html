@@ -542,11 +542,18 @@ function getSyncStatus()    { return !!getSyncUrl(); }
 
 let _syncTimer = null;
 
+let _lastSyncError = null;
+let _lastSyncOk    = null;
+
 function syncPush(payload) {
     const url = getSyncUrl();
     if (!url) return;
     fetch(url, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) })
-        .catch(() => {});
+        .then(r => {
+            if (!r.ok) { _lastSyncError = "Ошибка записи: " + r.status + " " + r.statusText; }
+            else        { _lastSyncError = null; _lastSyncOk = new Date().toLocaleTimeString(); }
+        })
+        .catch(e => { _lastSyncError = "Нет соединения: " + e.message; });
 }
 
 async function syncPull(silent) {
@@ -554,11 +561,15 @@ async function syncPull(silent) {
     if (!url) return;
     try {
         const r = await fetch(url + "?_=" + Date.now());
-        if (!r.ok) return;
+        if (!r.ok) {
+            _lastSyncError = "Ошибка чтения: " + r.status + " " + r.statusText;
+            if (!silent) showToast("❌ Ошибка синхронизации: " + r.status);
+            return;
+        }
         const data = await r.json();
+        _lastSyncError = null; _lastSyncOk = new Date().toLocaleTimeString();
         if (!data || typeof data._ts !== "number") return;
         if (data._ts <= (state._ts || 0)) return; // данные не новее
-        // Применяем обновления
         Object.assign(state, data);
         state.selectedSprintTaskIds = new Set(data.selectedSprintTaskIds || []);
         state.allTasksPool = JSON.parse(JSON.stringify(FULL_TASKS_DB));
@@ -569,7 +580,25 @@ async function syncPull(silent) {
         localStorage.setItem("b27_v2", JSON.stringify(data));
         render();
         if (!silent) showToast("🔄 Данные обновлены!");
-    } catch {}
+    } catch(e) {
+        _lastSyncError = "Исключение: " + e.message;
+        if (!silent) showToast("❌ Ошибка: " + e.message);
+    }
+}
+
+async function testSyncConnection() {
+    const url = getSyncUrl();
+    if (!url) return { ok: false, msg: "URL не задан" };
+    try {
+        const r = await fetch(url + "?_=" + Date.now());
+        if (r.status === 401 || r.status === 403)
+            return { ok: false, msg: "Доступ запрещён (" + r.status + "). Проверь правила Firebase — тестовый режим мог истечь." };
+        if (!r.ok)
+            return { ok: false, msg: "HTTP " + r.status + " " + r.statusText };
+        return { ok: true, msg: "Соединение работает ✅" };
+    } catch(e) {
+        return { ok: false, msg: "Нет соединения: " + e.message };
+    }
 }
 
 function startSyncPolling() {
@@ -2578,9 +2607,14 @@ function showSyncModal() {
                 <p class="text-xs text-gray-400 mt-1">Одинаковый на всех устройствах. Просто введи нужный код и нажми «Сохранить».</p>
             </div>
         </div>
+        <div id="syncStatusLine" class="text-xs mb-3 px-1 ${_lastSyncError ? 'text-red-500' : _lastSyncOk ? 'text-green-600' : 'text-gray-400'}">
+            ${_lastSyncError ? '❌ ' + _lastSyncError : _lastSyncOk ? '✅ Последняя синхронизация: ' + _lastSyncOk : '⏳ Ещё не синхронизировалось'}
+        </div>
+        <div class="text-xs text-gray-300 mb-3 break-all px-1">Путь: ${cfg.url}</div>
         <div class="flex gap-2">
             <button id="saveSyncBtn" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">💾 Сохранить</button>
-            <button id="syncNowBtn" class="bg-sky-100 text-sky-700 px-4 py-3 rounded-xl font-bold text-sm">⬇ Сейчас</button>
+            <button id="testSyncBtn" class="bg-gray-100 text-gray-700 px-3 py-3 rounded-xl font-bold text-sm">🔍</button>
+            <button id="syncNowBtn" class="bg-sky-100 text-sky-700 px-3 py-3 rounded-xl font-bold text-sm">⬇</button>
         </div>
         ` : `
         <!-- ─── НЕ НАСТРОЕНА ─── -->
@@ -2647,6 +2681,17 @@ function showSyncModal() {
         };
     }
     modal.querySelector("#syncNowBtn").onclick = () => { syncPull(false); modal.remove(); };
+    const testBtn = modal.querySelector("#testSyncBtn");
+    if (testBtn) testBtn.onclick = async () => {
+        testBtn.textContent = "…";
+        testBtn.disabled = true;
+        const res = await testSyncConnection();
+        testBtn.textContent = res.ok ? "✅" : "❌";
+        testBtn.disabled = false;
+        const line = modal.querySelector("#syncStatusLine");
+        if (line) { line.textContent = res.msg; line.className = "text-xs mb-3 px-1 " + (res.ok ? "text-green-600" : "text-red-500"); }
+        showToast(res.msg, 4000);
+    };
     modal.querySelector("#closeSyncM").onclick  = () => modal.remove();
     modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 }
