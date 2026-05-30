@@ -1,4 +1,4 @@
-const CACHE = 'b27-v3';
+const CACHE = 'b27-v4';
 const ASSETS = ['./uborka-b27.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e =>
