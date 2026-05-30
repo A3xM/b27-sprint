@@ -2582,82 +2582,58 @@ function showSyncModal() {
             <button id="closeSyncM" class="text-gray-300 text-2xl leading-none">×</button>
         </div>
 
-        ${cfg.url ? `
-        <!-- ─── УЖЕ НАСТРОЕНА ─── -->
-        <div class="bg-green-50 border border-green-200 rounded-xl p-3 mb-4 flex items-center gap-2">
-            <span>✅</span>
-            <p class="text-green-700 font-bold text-sm flex-1">Синхронизация активна</p>
-            <button id="disableSyncBtn" class="text-xs bg-red-100 text-red-500 px-2 py-1 rounded-lg">Отключить</button>
-        </div>
-        <div class="space-y-3 mb-4">
-            <div>
-                <label class="text-sm font-semibold text-gray-700 mb-1 block">Firebase URL</label>
-                <input id="syncUrlInput" type="url"
-                    value="${cfg.url.replace('/b27-'+familyCode+'.json','')}"
-                    class="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-            </div>
-            <div>
-                <label class="text-sm font-semibold text-gray-700 mb-1 block">Код семьи</label>
-                <div class="flex gap-2">
-                    <input id="familyCodeInput" type="text" value="${familyCode}"
-                        class="flex-1 border-2 border-amber-300 rounded-xl px-3 py-2.5 text-sm font-mono font-bold uppercase focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        placeholder="Например: ABC123">
-                    <button id="copyCodeBtn" class="bg-gray-100 text-gray-600 px-3 py-2 rounded-xl text-lg" title="Скопировать">📋</button>
-                </div>
-                <p class="text-xs text-gray-400 mt-1">Одинаковый на всех устройствах. Просто введи нужный код и нажми «Сохранить».</p>
-            </div>
-        </div>
-        <div id="syncStatusLine" class="text-xs mb-3 px-1 ${_lastSyncError ? 'text-red-500' : _lastSyncOk ? 'text-green-600' : 'text-gray-400'}">
-            ${_lastSyncError ? '❌ ' + _lastSyncError : _lastSyncOk ? '✅ Последняя синхронизация: ' + _lastSyncOk : '⏳ Ещё не синхронизировалось'}
-        </div>
-        <div class="text-xs text-gray-300 mb-3 break-all px-1">Путь: ${cfg.url}</div>
-        <div class="flex gap-2">
-            <button id="saveSyncBtn" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">💾 Сохранить</button>
-            <button id="testSyncBtn" class="bg-gray-100 text-gray-700 px-3 py-3 rounded-xl font-bold text-sm">🔍</button>
-            <button id="syncNowBtn" class="bg-sky-100 text-sky-700 px-3 py-3 rounded-xl font-bold text-sm">⬇</button>
-        </div>
-        ` : `
-        <!-- ─── НЕ НАСТРОЕНА ─── -->
-        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-            <p class="text-amber-800 font-bold text-sm">⚠️ Синхронизация не настроена</p>
-            <p class="text-amber-600 text-xs mt-0.5">Данные хранятся только на этом устройстве</p>
-        </div>
-        <div class="bg-blue-50 rounded-xl p-4 mb-4">
-            <p class="text-blue-800 font-semibold text-sm mb-2">Как настроить (5 минут, бесплатно):</p>
-            <ol class="text-xs text-blue-700 space-y-1 list-decimal list-inside leading-relaxed">
-                <li>Открой <strong>console.firebase.google.com</strong></li>
-                <li>Войди через Google → «Создать проект»</li>
-                <li>Realtime Database → Создать → Тестовый режим</li>
-                <li>Скопируй URL вида <code>https://xxx-rtdb.firebaseio.com</code></li>
-            </ol>
-        </div>
-        <div class="space-y-3 mb-4">
+        ${cfg.url
+            ? `<div class="bg-green-50 border border-green-200 rounded-xl p-3 mb-4 flex items-center gap-2">
+                <span>✅</span><p class="text-green-700 font-bold text-sm flex-1">Синхронизация активна</p>
+                <button id="disableSyncBtn" class="text-xs bg-red-100 text-red-500 px-2 py-1 rounded-lg">Отключить</button>
+               </div>`
+            : `<div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+                <p class="text-amber-800 font-bold text-sm">⚠️ Синхронизация не настроена</p>
+                <p class="text-amber-600 text-xs mt-0.5">Данные хранятся только на этом устройстве</p>
+               </div>
+               <div class="bg-blue-50 rounded-xl p-3 mb-4">
+                <ol class="text-xs text-blue-700 space-y-1 list-decimal list-inside leading-relaxed">
+                    <li>Открой <strong>console.firebase.google.com</strong></li>
+                    <li>Создать проект → Realtime Database → Тестовый режим</li>
+                    <li>Скопируй URL вида <code>https://xxx-rtdb.firebaseio.com</code></li>
+                </ol>
+               </div>`}
+
+        <div class="space-y-3 mb-3">
             <div>
                 <label class="text-sm font-semibold text-gray-700 mb-1 block">Firebase Database URL</label>
-                <input id="syncUrlInput" type="url" value=""
+                <input id="syncUrlInput" type="url"
+                    value="${cfg.url ? cfg.url.replace('/b27-'+familyCode+'.json','') : ''}"
                     placeholder="https://my-project-default-rtdb.firebaseio.com"
                     class="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
             </div>
             <div>
-                <label class="text-sm font-semibold text-gray-700 mb-1 block">Код семьи</label>
+                <label class="text-sm font-semibold text-gray-700 mb-1 block">Код семьи — одинаковый на всех устройствах</label>
                 <div class="flex gap-2">
                     <input id="familyCodeInput" type="text" value="${familyCode}"
                         placeholder="Например: ABC123"
-                        class="flex-1 border rounded-xl px-3 py-2.5 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-amber-400">
-                    <button id="copyCodeBtn" class="bg-gray-100 text-gray-600 px-3 py-2 rounded-xl text-lg" title="Скопировать">📋</button>
+                        class="flex-1 border-2 border-amber-300 rounded-xl px-3 py-2.5 text-sm font-mono font-bold uppercase focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    <button id="copyCodeBtn" class="bg-gray-100 text-gray-600 px-3 py-2 rounded-xl text-lg" title="Скопировать код">📋</button>
                 </div>
-                <p class="text-xs text-gray-400 mt-1">Одинаковый на всех устройствах семьи. Если подключаешь второе устройство — введи код с первого.</p>
             </div>
         </div>
-        <button id="saveSyncBtn" class="w-full bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold">💾 Сохранить и включить</button>
-        `}
+
+        <div id="syncStatusLine" class="text-xs mb-3 px-1 ${_lastSyncError ? 'text-red-500' : _lastSyncOk ? 'text-green-600' : 'text-gray-400'}">
+            ${_lastSyncError ? '❌ ' + _lastSyncError : _lastSyncOk ? '✅ Последняя синхронизация: ' + _lastSyncOk : ''}
+        </div>
+
+        <div class="flex gap-2">
+            <button id="saveSyncBtn" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold text-sm">💾 Сохранить</button>
+            <button id="testSyncBtn" class="bg-gray-100 text-gray-700 px-4 py-3 rounded-xl font-bold text-sm" title="Проверить соединение">🔍 Проверить</button>
+            ${cfg.url ? `<button id="syncNowBtn" class="bg-sky-100 text-sky-700 px-3 py-3 rounded-xl font-bold text-sm">⬇</button>` : ""}
+        </div>
     </div>`;
     document.body.appendChild(modal);
 
     modal.querySelector("#saveSyncBtn").onclick = () => {
         const raw  = modal.querySelector("#syncUrlInput").value.trim().replace(/\/+$/, "");
         const code = (modal.querySelector("#familyCodeInput").value.trim().toUpperCase() || familyCode);
-        if (!raw) { showToast("Введи URL базы данных"); return; }
+        if (!raw)  { showToast("Введи URL базы данных"); return; }
         if (!code) { showToast("Введи код семьи"); return; }
         const syncUrl = raw + "/b27-" + code + ".json";
         saveSyncConfig({ url: syncUrl, familyCode: code });
@@ -2672,26 +2648,40 @@ function showSyncModal() {
         navigator.clipboard?.writeText(code).then(() => showToast("📋 Код скопирован: " + code))
             .catch(() => showToast("Код: " + code));
     };
+    modal.querySelector("#testSyncBtn").onclick = async () => {
+        const testBtn = modal.querySelector("#testSyncBtn");
+        const raw  = modal.querySelector("#syncUrlInput").value.trim().replace(/\/+$/, "");
+        const code = modal.querySelector("#familyCodeInput").value.trim().toUpperCase() || familyCode;
+        const testUrl = raw ? raw + "/b27-" + code + ".json" : getSyncUrl();
+        if (!testUrl) { showToast("Сначала введи URL", 3000); return; }
+        testBtn.textContent = "⏳";
+        testBtn.disabled = true;
+        try {
+            const r = await fetch(testUrl + "?_=" + Date.now());
+            const ok = r.ok || r.status === 200;
+            const msg = r.status === 401 || r.status === 403
+                ? "❌ Доступ запрещён (" + r.status + ") — правила Firebase истекли. Зайди в Console → Realtime DB → Правила и продли."
+                : ok ? "✅ Соединение работает! Путь: " + testUrl
+                     : "❌ Ошибка " + r.status + " " + r.statusText;
+            testBtn.textContent = ok ? "✅" : "❌";
+            const line = modal.querySelector("#syncStatusLine");
+            if (line) { line.textContent = msg; line.className = "text-xs mb-3 px-1 " + (ok ? "text-green-600" : "text-red-500"); }
+            showToast(msg, 5000);
+        } catch(e) {
+            testBtn.textContent = "❌";
+            showToast("❌ Нет соединения: " + e.message, 5000);
+        }
+        testBtn.disabled = false;
+    };
     if (modal.querySelector("#disableSyncBtn")) {
         modal.querySelector("#disableSyncBtn").onclick = () => {
             saveSyncConfig({ familyCode });
             if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
-            modal.remove();
-            render();
+            modal.remove(); render();
         };
     }
-    modal.querySelector("#syncNowBtn").onclick = () => { syncPull(false); modal.remove(); };
-    const testBtn = modal.querySelector("#testSyncBtn");
-    if (testBtn) testBtn.onclick = async () => {
-        testBtn.textContent = "…";
-        testBtn.disabled = true;
-        const res = await testSyncConnection();
-        testBtn.textContent = res.ok ? "✅" : "❌";
-        testBtn.disabled = false;
-        const line = modal.querySelector("#syncStatusLine");
-        if (line) { line.textContent = res.msg; line.className = "text-xs mb-3 px-1 " + (res.ok ? "text-green-600" : "text-red-500"); }
-        showToast(res.msg, 4000);
-    };
+    if (modal.querySelector("#syncNowBtn"))
+        modal.querySelector("#syncNowBtn").onclick = () => { syncPull(false); modal.remove(); };
     modal.querySelector("#closeSyncM").onclick  = () => modal.remove();
     modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 }
