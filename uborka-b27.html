@@ -159,13 +159,11 @@ const FULL_TASKS_DB = [
     { id:"f1", name:"Составить меню на неделю",
       type:"mom_primary", category:"Питание", freq:"weekly", time:20,
       who:["Мама"],
-      helper:{ who:"Майя", name:"Обсудить меню с мамой", time:10, optional:true },
       prefs:{Миша:10,Максим:2,Майя:3,Мама:9} },
 
     { id:"f2", name:"Купить продукты",
       type:"mom_primary", category:"Питание", freq:"weekly", time:45,
       who:["Мама"],
-      helper:{ who:"Максим", name:"Помочь донести продукты", time:15, optional:true },
       note:"Не актуально при заказе доставки",
       prefs:{Миша:8,Максим:3,Майя:3,Мама:9} },
 
@@ -267,7 +265,6 @@ const FULL_TASKS_DB = [
     { id:"m6", name:"Убрать игровую",
       type:"shared", category:"Комнаты", freq:"monthly", time:20,
       who:["Мама"],
-      subtask:{ who:"Миша", name:"Разложить свои игрушки в игровой (подзадача)", time:10, adhdFriendly:true },
       prefs:{Миша:5,Максим:1,Майя:1,Мама:6} },
 
     { id:"m7", name:"Убрать лоджию",
@@ -714,15 +711,15 @@ function assignBalanced(tasks) {
 // Статистика распределения
 function calcStats(tasks) {
     const stats = {};
-    MEMBERS.forEach(m => { stats[m] = { count:0, sum:0, avg:0, tasks:[] }; });
+    [...MEMBERS, "Х"].forEach(m => { stats[m] = { count:0, sum:0, avg:0, tasks:[] }; });
     tasks.forEach(t => {
         const m = t.assignee;
-        if (!stats[m]) return;
+        if (!stats[m]) stats[m] = { count:0, sum:0, avg:0, tasks:[] };
         stats[m].count++;
-        stats[m].sum += (t.prefs[m] || 1);
+        stats[m].sum += (t.prefs?.[m] || 1);
         stats[m].tasks.push(t);
     });
-    MEMBERS.forEach(m => {
+    [...MEMBERS, "Х"].forEach(m => {
         stats[m].avg = stats[m].count ? +(stats[m].sum / stats[m].count).toFixed(2) : 0;
     });
     return stats;
@@ -946,7 +943,7 @@ function renderStats(tasks) {
 
 // ─────────────────── ПЕРЕКЛЮЧАТЕЛЬ ПОЛЬЗОВАТЕЛЯ (общий) ───────────────────
 function renderUserSwitcher(current) {
-    const opts = [...MEMBERS, "Администратор"];
+    const opts = [...MEMBERS, "Х", "Администратор"];
     return `<select id="userSwitcher" class="hidden sm:inline-block border rounded-lg px-2 py-1.5 text-sm tap44">
         ${opts.map(m => `<option ${m===current?"selected":""}>${m}</option>`).join("")}
     </select>`;
@@ -959,9 +956,9 @@ function renderAdminView() {
     const famPct   = famTotal ? Math.round(famDone/famTotal*100) : 0;
     const stats    = calcStats(state.tasks);
 
-    const memberColors = { Миша:"blue", Максим:"purple", Майя:"pink", Мама:"amber" };
+    const memberColors = { Миша:"blue", Максим:"purple", Майя:"pink", Мама:"amber", Х:"gray" };
 
-    let memberSections = MEMBERS.map(m => {
+    let memberSections = [...MEMBERS, "Х"].map(m => {
         const mTasks   = state.tasks.filter(t => t.assignee === m);
         const pending  = mTasks.filter(t => !t.done);
         const done     = mTasks.filter(t => t.done);
@@ -1014,6 +1011,7 @@ function renderAdminView() {
                 </div>
                 <div class="flex gap-2 flex-wrap items-center">
                     ${renderUserSwitcher("Администратор")}
+                    <button id="openSyncModal" class="bg-sky-100 text-sky-700 px-3 py-1 rounded-xl text-sm" title="Синхронизация">${getSyncStatus() ? "🔄✅" : "🔄"}</button>
                     <button id="showStats" class="bg-amber-100 text-amber-800 px-3 py-1 rounded-xl text-sm">📊 Статистика</button>
                 </div>
             </div>
@@ -1036,10 +1034,53 @@ function renderAdminView() {
     </div>`;
 }
 
+// ─────────────────── РЕНДЕР: задачи без исполнителя (роль Х) ───────────────────
+function renderXView() {
+    const tasks = state.tasks.filter(t => t.assignee === "Х");
+    const done  = tasks.filter(t => t.done);
+    const todo  = tasks.filter(t => !t.done);
+
+    const cards = todo.map(t => `
+        <div class="flex items-center gap-2 border-b py-2">
+            <div class="flex-1">
+                <p class="text-sm font-medium text-gray-800">${t.name}</p>
+                <p class="text-xs text-gray-400">⏱ ${t.time} мин · ${t.sprint === "sun" ? "☀️ вс" : "📅 сб"}</p>
+            </div>
+            <button class="reassignBtn text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg font-medium" data-id="${t.id}">Назначить →</button>
+        </div>`).join("");
+
+    const doneCards = done.map(t => `
+        <div class="flex items-center gap-2 border-b py-1">
+            <span class="flex-1 text-xs line-through text-gray-400">${t.name}</span>
+        </div>`).join("");
+
+    return `
+    <div class="space-y-4">
+        <div class="bg-white rounded-2xl shadow-lg p-4 flex flex-wrap gap-3 items-center justify-between">
+            <div>
+                <h2 class="text-xl font-bold text-gray-700">❓ Без исполнителя</h2>
+                <p class="text-sm text-gray-500">Задачи, для которых исполнитель ещё не определён</p>
+            </div>
+            <div class="flex gap-2 flex-wrap items-center">
+                ${renderUserSwitcher("Х")}
+                <button id="openSyncModal" class="bg-sky-100 text-sky-700 px-3 py-1 rounded-xl text-sm" title="Синхронизация">${getSyncStatus() ? "🔄✅" : "🔄"}</button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm p-4">
+            ${todo.length
+                ? `<p class="text-xs text-gray-400 uppercase font-semibold mb-3">Нужен исполнитель (${todo.length})</p>${cards}`
+                : `<p class="text-sm text-gray-400 text-center py-6">Все задачи назначены — здесь пусто 🎉</p>`}
+            ${done.length ? `<details class="mt-3"><summary class="text-xs text-gray-400 cursor-pointer">✅ Выполнено (${done.length})</summary>${doneCards}</details>` : ""}
+        </div>
+    </div>`;
+}
+
 // ─────────────────── РЕНДЕР: выполнение (обычный участник) ───────────────────
 function renderExecution() {
     const user = state.currentUser;
     if (user === "Администратор") return renderAdminView();
+    if (user === "Х") return renderXView();
 
     const myTasks  = state.tasks.filter(t => t.assignee === user);
     ensureTaskOrder(user, myTasks);
@@ -1253,7 +1294,7 @@ function showReassignModal(taskId) {
     const task = state.tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    const others = MEMBERS.filter(m => m !== task.assignee);
+    const others = [...MEMBERS, "Х"].filter(m => m !== task.assignee);
     const prefRows = others.map(m => {
         const p = task.prefs?.[m] || 1;
         return `
@@ -2663,10 +2704,10 @@ function showSubtaskTransferModal(taskId, subId) {
         </div>
         <p class="text-sm text-gray-600 mb-3">Кому назначить как новую задачу?</p>
         <div class="space-y-2 mb-5">
-            ${MEMBERS.map(m => `
+            ${[...MEMBERS, "Х"].map(m => `
             <label class="flex items-center gap-3 p-3 border-2 border-gray-100 rounded-xl hover:border-amber-300 cursor-pointer transition-all has-[:checked]:border-amber-400 has-[:checked]:bg-amber-50">
                 <input type="radio" name="transferTo" value="${m}" class="w-4 h-4 accent-amber-500">
-                <span class="font-medium text-sm">${m}</span>
+                <span class="font-medium text-sm">${m === "Х" ? "❓ Х (без исполнителя)" : m}</span>
             </label>`).join("")}
         </div>
         <div class="flex gap-3">
@@ -2702,6 +2743,7 @@ function renderBottomNav(current) {
         { key:"Максим",        icon:"🧑", label:"Максим" },
         { key:"Майя",          icon:"👧", label:"Майя"   },
         { key:"Мама",          icon:"👩", label:"Мама"   },
+        { key:"Х",             icon:"❓", label:"Х"      },
         { key:"Администратор", icon:"🔧", label:"Адм."   },
     ];
     return tabs.map(t => {
