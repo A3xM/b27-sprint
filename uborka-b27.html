@@ -2645,11 +2645,12 @@ function showSyncModal() {
             <button id="testSyncBtn" class="bg-gray-100 text-gray-700 px-4 py-3 rounded-xl font-bold text-sm" title="Проверить соединение">🔍 Проверить</button>
         </div>
         ${cfg.url ? `
-        <div class="flex gap-2">
-            <button id="syncPullBtn" class="flex-1 bg-sky-100 text-sky-700 py-3 rounded-xl font-bold text-sm">⬇ Получить с сервера</button>
-            <button id="syncPushBtn" class="flex-1 bg-green-100 text-green-700 py-3 rounded-xl font-bold text-sm">📤 Отправить на сервер</button>
+        <div class="flex gap-2 mb-2">
+            <button id="syncPullBtn" class="flex-1 bg-sky-100 text-sky-700 py-3 rounded-xl font-bold text-sm">⬇ Получить</button>
+            <button id="syncPushBtn" class="flex-1 bg-green-100 text-green-700 py-3 rounded-xl font-bold text-sm">📤 Отправить</button>
         </div>
-        <p class="text-xs text-gray-400 mt-2 text-center">⬇ берёт данные с сервера · 📤 отправляет твои данные</p>
+        <button id="inviteLinkBtn" class="w-full bg-purple-100 text-purple-700 py-3 rounded-xl font-bold text-sm">📲 Ссылка для нового устройства</button>
+        <p class="text-xs text-gray-400 mt-2 text-center">Открой ссылку на любом устройстве — синхронизация настроится сама</p>
         ` : ""}
     </div>`;
     document.body.appendChild(modal);
@@ -2696,7 +2697,7 @@ function showSyncModal() {
         };
     }
     if (modal.querySelector("#syncPullBtn"))
-        modal.querySelector("#syncPullBtn").onclick = () => { modal.remove(); syncPull(false, true); }; // force=true
+        modal.querySelector("#syncPullBtn").onclick = () => { modal.remove(); syncPull(false, true); };
     if (modal.querySelector("#syncPushBtn"))
         modal.querySelector("#syncPushBtn").onclick = () => {
             state._ts = Date.now();
@@ -2705,6 +2706,18 @@ function showSyncModal() {
             syncPush(payload);
             modal.remove();
             showToast("📤 Отправлено на сервер!", 3000);
+        };
+    if (modal.querySelector("#inviteLinkBtn"))
+        modal.querySelector("#inviteLinkBtn").onclick = () => {
+            const cfg2 = getSyncConfig();
+            const base = cfg2.url ? cfg2.url.replace(/\/b27-[^/]+\.json$/, "") : "";
+            const code = cfg2.familyCode || "";
+            if (!base || !code) { showToast("Сначала сохрани настройки синхронизации"); return; }
+            const link = location.origin + location.pathname
+                + "?fburl=" + encodeURIComponent(base) + "&code=" + code;
+            navigator.clipboard?.writeText(link)
+                .then(() => showToast("📲 Ссылка скопирована! Отправь её на новое устройство", 4000))
+                .catch(() => prompt("Скопируй ссылку:", link));
         };
     modal.querySelector("#closeSyncM").onclick  = () => modal.remove();
     modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
@@ -2885,6 +2898,20 @@ function render() {
     attachEvents();
     if (!_syncTimer && getSyncUrl()) startSyncPolling();
 }
+
+// ─── Авто-настройка синхронизации по invite-ссылке ───
+(function() {
+    const p = new URLSearchParams(location.search);
+    const fburl = p.get("fburl");
+    const code  = p.get("code");
+    if (fburl && code) {
+        const syncUrl = decodeURIComponent(fburl).replace(/\/+$/, "") + "/b27-" + code.toUpperCase() + ".json";
+        saveSyncConfig({ url: syncUrl, familyCode: code.toUpperCase() });
+        // Убираем параметры из адресной строки (чтобы не залипли)
+        history.replaceState(null, "", location.pathname);
+        showToast("🔗 Синхронизация настроена автоматически!", 3000);
+    }
+})();
 
 loadState();
 // Авто-пресет «Обычный» если ещё ничего не выбрано
