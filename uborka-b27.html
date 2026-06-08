@@ -567,10 +567,16 @@ async function syncPull(silent) {
             return;
         }
         const data = await r.json();
-        if (!data || typeof data._ts !== "number") return; // нет данных по этому пути
-        _lastSyncError = null; _lastSyncOk = new Date().toLocaleTimeString();
-        if (data._ts <= (state._ts || 0)) return; // данные не новее
-        // Сохраняем локальные параметры устройства — не перезаписываем с сервера
+        if (!data || typeof data._ts !== "number") {
+            if (!silent) showToast("⚠️ В Firebase нет данных. Проверь код семьи.");
+            return;
+        }
+        if (data._ts <= (state._ts || 0)) {
+            // Данные не новее — у нас уже актуальная версия
+            if (!silent) showToast("✅ У тебя уже актуальные данные (сохр. " + new Date(state._ts).toLocaleTimeString() + ")");
+            return;
+        }
+        // Применяем данные с сервера
         const keepLocal = { currentUser: state.currentUser };
         Object.assign(state, data, keepLocal);
         state.selectedSprintTaskIds = new Set(data.selectedSprintTaskIds || []);
@@ -580,8 +586,11 @@ async function syncPull(silent) {
         if (!state.frogTaskIds) state.frogTaskIds = {};
         if (!state.taskOrder)   state.taskOrder   = {};
         localStorage.setItem("b27_v2", JSON.stringify(data));
+        _lastSyncError = null;
+        _lastSyncOk = new Date().toLocaleTimeString();
         render();
-        if (!silent) showToast("🔄 Данные обновлены!");
+        const taskCount = (data.tasks || []).length;
+        if (!silent) showToast("🔄 Синхронизировано! " + taskCount + " задач, сохр. " + new Date(data._ts).toLocaleTimeString(), 4000);
     } catch(e) {
         _lastSyncError = "Исключение: " + e.message;
         if (!silent) showToast("❌ Ошибка: " + e.message);
