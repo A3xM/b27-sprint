@@ -567,10 +567,12 @@ async function syncPull(silent) {
             return;
         }
         const data = await r.json();
+        if (!data || typeof data._ts !== "number") return; // нет данных по этому пути
         _lastSyncError = null; _lastSyncOk = new Date().toLocaleTimeString();
-        if (!data || typeof data._ts !== "number") return;
         if (data._ts <= (state._ts || 0)) return; // данные не новее
-        Object.assign(state, data);
+        // Сохраняем локальные параметры устройства — не перезаписываем с сервера
+        const keepLocal = { currentUser: state.currentUser };
+        Object.assign(state, data, keepLocal);
         state.selectedSprintTaskIds = new Set(data.selectedSprintTaskIds || []);
         state.allTasksPool = JSON.parse(JSON.stringify(FULL_TASKS_DB));
         if (state.customTasks?.length)
@@ -586,18 +588,25 @@ async function syncPull(silent) {
     }
 }
 
-async function testSyncConnection() {
-    const url = getSyncUrl();
+async function testSyncConnection(overrideUrl) {
+    const url = overrideUrl || getSyncUrl();
     if (!url) return { ok: false, msg: "URL не задан" };
     try {
         const r = await fetch(url + "?_=" + Date.now());
         if (r.status === 401 || r.status === 403)
-            return { ok: false, msg: "Доступ запрещён (" + r.status + "). Проверь правила Firebase — тестовый режим мог истечь." };
+            return { ok: false, msg: "❌ Доступ запрещён (" + r.status + ") — правила Firebase истекли.\nЗайди в Firebase Console → Realtime Database → Правила и продли." };
         if (!r.ok)
-            return { ok: false, msg: "HTTP " + r.status + " " + r.statusText };
-        return { ok: true, msg: "Соединение работает ✅" };
+            return { ok: false, msg: "❌ HTTP " + r.status + " " + r.statusText };
+        const data = await r.json();
+        if (data === null)
+            return { ok: false, msg: "⚠️ Путь пустой — данных нет.\nВозможно код семьи отличается от другого устройства.\nПроверь: на всех устройствах должен быть одинаковый код." };
+        if (typeof data._ts === "number") {
+            const d = new Date(data._ts);
+            return { ok: true, msg: "✅ Данные есть! Последнее сохранение: " + d.toLocaleString() + "\nПуть: " + url };
+        }
+        return { ok: true, msg: "✅ Соединение работает, но данные непонятного формата.\nПуть: " + url };
     } catch(e) {
-        return { ok: false, msg: "Нет соединения: " + e.message };
+        return { ok: false, msg: "❌ Нет соединения: " + e.message };
     }
 }
 
@@ -2651,27 +2660,18 @@ function showSyncModal() {
     modal.querySelector("#testSyncBtn").onclick = async () => {
         const testBtn = modal.querySelector("#testSyncBtn");
         const raw  = modal.querySelector("#syncUrlInput").value.trim().replace(/\/+$/, "");
-        const code = modal.querySelector("#familyCodeInput").value.trim().toUpperCase() || familyCode;
+        const code = (modal.querySelector("#familyCodeInput").value.trim().toUpperCase()) || familyCode;
         const testUrl = raw ? raw + "/b27-" + code + ".json" : getSyncUrl();
         if (!testUrl) { showToast("Сначала введи URL", 3000); return; }
-        testBtn.textContent = "⏳";
-        testBtn.disabled = true;
-        try {
-            const r = await fetch(testUrl + "?_=" + Date.now());
-            const ok = r.ok || r.status === 200;
-            const msg = r.status === 401 || r.status === 403
-                ? "❌ Доступ запрещён (" + r.status + ") — правила Firebase истекли. Зайди в Console → Realtime DB → Правила и продли."
-                : ok ? "✅ Соединение работает! Путь: " + testUrl
-                     : "❌ Ошибка " + r.status + " " + r.statusText;
-            testBtn.textContent = ok ? "✅" : "❌";
-            const line = modal.querySelector("#syncStatusLine");
-            if (line) { line.textContent = msg; line.className = "text-xs mb-3 px-1 " + (ok ? "text-green-600" : "text-red-500"); }
-            showToast(msg, 5000);
-        } catch(e) {
-            testBtn.textContent = "❌";
-            showToast("❌ Нет соединения: " + e.message, 5000);
+        testBtn.textContent = "⏳"; testBtn.disabled = true;
+        const res = await testSyncConnection(testUrl);
+        testBtn.textContent = res.ok ? "✅" : "❌"; testBtn.disabled = false;
+        const line = modal.querySelector("#syncStatusLine");
+        if (line) {
+            line.textContent = res.msg;
+            line.style.whiteSpace = "pre-line";
+            line.className = "text-xs mb-3 px-1 " + (res.ok ? "text-green-600" : "text-red-500");
         }
-        testBtn.disabled = false;
     };
     if (modal.querySelector("#disableSyncBtn")) {
         modal.querySelector("#disableSyncBtn").onclick = () => {
