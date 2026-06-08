@@ -556,7 +556,7 @@ function syncPush(payload) {
         .catch(e => { _lastSyncError = "Нет соединения: " + e.message; });
 }
 
-async function syncPull(silent) {
+async function syncPull(silent, force) {
     const url = getSyncUrl();
     if (!url) return;
     try {
@@ -571,9 +571,9 @@ async function syncPull(silent) {
             if (!silent) showToast("⚠️ В Firebase нет данных. Проверь код семьи.");
             return;
         }
-        if (data._ts <= (state._ts || 0)) {
-            // Данные не новее — у нас уже актуальная версия
-            if (!silent) showToast("✅ У тебя уже актуальные данные (сохр. " + new Date(state._ts).toLocaleTimeString() + ")");
+        if (!force && data._ts <= (state._ts || 0)) {
+            // Тихий опрос — данные не новее, пропускаем
+            if (!silent) showToast("✅ Уже актуально (сохр. " + new Date(state._ts).toLocaleTimeString() + ")");
             return;
         }
         // Применяем данные с сервера
@@ -590,7 +590,7 @@ async function syncPull(silent) {
         _lastSyncOk = new Date().toLocaleTimeString();
         render();
         const taskCount = (data.tasks || []).length;
-        if (!silent) showToast("🔄 Синхронизировано! " + taskCount + " задач, сохр. " + new Date(data._ts).toLocaleTimeString(), 4000);
+        if (!silent) showToast("🔄 Получено! " + taskCount + " задач, сохр. " + new Date(data._ts).toLocaleTimeString(), 4000);
     } catch(e) {
         _lastSyncError = "Исключение: " + e.message;
         if (!silent) showToast("❌ Ошибка: " + e.message);
@@ -2640,11 +2640,17 @@ function showSyncModal() {
             ${_lastSyncError ? '❌ ' + _lastSyncError : _lastSyncOk ? '✅ Последняя синхронизация: ' + _lastSyncOk : ''}
         </div>
 
-        <div class="flex gap-2">
+        <div class="flex gap-2 mb-2">
             <button id="saveSyncBtn" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-3 rounded-xl font-bold text-sm">💾 Сохранить</button>
             <button id="testSyncBtn" class="bg-gray-100 text-gray-700 px-4 py-3 rounded-xl font-bold text-sm" title="Проверить соединение">🔍 Проверить</button>
-            ${cfg.url ? `<button id="syncNowBtn" class="bg-sky-100 text-sky-700 px-3 py-3 rounded-xl font-bold text-sm">⬇</button>` : ""}
         </div>
+        ${cfg.url ? `
+        <div class="flex gap-2">
+            <button id="syncPullBtn" class="flex-1 bg-sky-100 text-sky-700 py-3 rounded-xl font-bold text-sm">⬇ Получить с сервера</button>
+            <button id="syncPushBtn" class="flex-1 bg-green-100 text-green-700 py-3 rounded-xl font-bold text-sm">📤 Отправить на сервер</button>
+        </div>
+        <p class="text-xs text-gray-400 mt-2 text-center">⬇ берёт данные с сервера · 📤 отправляет твои данные</p>
+        ` : ""}
     </div>`;
     document.body.appendChild(modal);
 
@@ -2689,8 +2695,17 @@ function showSyncModal() {
             modal.remove(); render();
         };
     }
-    if (modal.querySelector("#syncNowBtn"))
-        modal.querySelector("#syncNowBtn").onclick = () => { syncPull(false); modal.remove(); };
+    if (modal.querySelector("#syncPullBtn"))
+        modal.querySelector("#syncPullBtn").onclick = () => { modal.remove(); syncPull(false, true); }; // force=true
+    if (modal.querySelector("#syncPushBtn"))
+        modal.querySelector("#syncPushBtn").onclick = () => {
+            state._ts = Date.now();
+            const payload = { ...state, selectedSprintTaskIds: Array.from(state.selectedSprintTaskIds) };
+            delete payload.allTasksPool;
+            syncPush(payload);
+            modal.remove();
+            showToast("📤 Отправлено на сервер!", 3000);
+        };
     modal.querySelector("#closeSyncM").onclick  = () => modal.remove();
     modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
 }
